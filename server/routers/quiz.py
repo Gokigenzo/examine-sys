@@ -1,0 +1,86 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
+from ..database import get_db
+from ..models import Question, UserProgress
+from ..schemas import QuizSubmitRequest, QuizSubmitResponse, PracticeWrongOut, QuestionOut, UserProgressOut
+from pydantic import BaseModel
+
+router = APIRouter(prefix="/api/quiz", tags=["Quiz"])
+
+class BookmarkRequest(BaseModel):
+    question_id: int
+
+@router.post("/submit", response_model=QuizSubmitResponse)
+async def submit_answer(req: QuizSubmitRequest, db: Session = Depends(get_db)):
+    question = db.query(Question).filter(Question.id == req.question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+        
+    is_correct = (req.selected_option.upper() == question.correct_option.upper())
+    
+    # Update progress
+    progress = db.query(UserProgress).filter(UserProgress.question_id == req.question_id).first()
+    if not progress:
+        progress = UserProgress(
+            question_id=req.question_id,
+            is_wrong=not is_correct,
+            wrong_count=1 if not is_correct else 0
+        )
+        db.add(progress)
+    else:
+        if not is_correct:
+            progress.is_wrong = True
+            progress.wrong_count += 1
+        else:
+            progress.is_wrong = False
+            
+    db.commit()
+    db.refresh(progress)
+    
+    return QuizSubmitResponse(
+        is_correct=is_correct,
+        correct_option=question.correct_option,
+        brief_explanation=question.brief_explanation,
+        detailed_explanation=question.detailed_explanation,
+        wrong_count=progress.wrong_count
+    )
+
+@router.post("/bookmark")
+async def toggle_bookmark(req: BookmarkRequest, db: Session = Depends(get_db)):
+    question = db.query(Question).filter(Question.id == req.question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+        
+    progress = db.query(UserProgress).filter(UserProgress.question_id == req.question_id).first()
+    if not progress:
+        progress = UserProgress(
+            question_id=req.question_id,
+            is_bookmarked=True
+        )
+        db.add(progress)
+    else:
+        progress.is_bookmarked = not progress.is_bookmarked
+        
+    db.commit()
+    db.refresh(progress)
+    
+    return {"message": "Bookmark toggled", "is_bookmarked": progress.is_bookmarked}
+
+@router.get("/practice-wrong", response_model=List[PracticeWrongOut])
+async def get_practice_wrong(db: Session = Depends(get_db)):
+    records = (
+        db.query(Question, UserProgress)
+        .join(UserProgress, Question.id == UserProgress.question_id)
+        .filter((UserProgress.is_wrong == True) | (UserProgress.is_bookmarked == True))
+        .all()
+    )
+    
+    result = []
+    for q, p in records:
+        result.append(PracticeWrongOut(
+            question=QuestionOut.model_validate(q),
+            progress=UserProgressOut.model_validate(p)
+        ))
+        
+    return result
