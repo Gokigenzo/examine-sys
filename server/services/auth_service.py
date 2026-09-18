@@ -1,7 +1,11 @@
 import bcrypt
 import jwt
+import requests
+import secrets
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -11,6 +15,41 @@ from ..database import get_db
 from ..models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def verify_google_token(credential: str) -> Dict[str, Any]:
+    """
+    Verify a Google ID Token (credential) using Google's public keys.
+    Returns token payload containing email, name, picture, sub.
+    """
+    try:
+        req = google_requests.Request()
+        audience = settings.GOOGLE_CLIENT_ID if settings.GOOGLE_CLIENT_ID else None
+        idinfo = google_id_token.verify_oauth2_token(credential, req, audience=audience)
+
+        if idinfo.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
+            raise ValueError("Token không được phát hành bởi Google.")
+
+        return idinfo
+    except Exception as e:
+        # Fallback to tokeninfo endpoint in case of local cert verification issues
+        try:
+            resp = requests.get(
+                f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}",
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if settings.GOOGLE_CLIENT_ID and data.get("aud") != settings.GOOGLE_CLIENT_ID:
+                    raise ValueError("Client ID không trùng khớp với cấu hình hệ thống.")
+                return data
+        except Exception:
+            pass
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Xác thực tài khoản Google không hợp lệ hoặc đã hết hạn ({str(e)})",
+        )
 
 
 def hash_password(password: str) -> str:

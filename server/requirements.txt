@@ -11,3 +11,5 @@ python-pptx>=0.6.22
 bcrypt>=4.0.1
 pyjwt>=2.8.0
 psycopg2-binary>=2.9.9
+google-auth>=2.0.0
+requests>=2.31.0

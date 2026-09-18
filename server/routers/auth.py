@@ -1,3 +1,4 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -8,6 +9,7 @@ from ..models import User, UserProgress, ExamAttempt, Chapter
 from ..schemas import (
     UserRegister,
     UserLogin,
+    GoogleAuthRequest,
     UserOut,
     TokenResponse,
     UserDashboardStats,
@@ -18,9 +20,70 @@ from ..services.auth_service import (
     verify_password,
     create_access_token,
     get_current_user,
+    verify_google_token,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticate or auto-register a user using a verified Google ID Token.
+    Returns standard system JWT token.
+    """
+    if not req.credential:
+        raise HTTPException(
+            status_code=400, detail="Thiếu Google ID Token (credential)"
+        )
+
+    # 1. Verify token with Google
+    payload = verify_google_token(req.credential)
+    email = payload.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=400, detail="Không thể trích xuất email từ tài khoản Google"
+        )
+
+    email_clean = email.strip().lower()
+    name = payload.get("name") or email_clean.split("@")[0]
+    picture = payload.get("picture")
+
+    # 2. Check if user exists
+    user = db.query(User).filter(User.email == email_clean).first()
+
+    if not user:
+        # Create new user
+        user = User(
+            email=email_clean,
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            full_name=name,
+            avatar_url=picture,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        # User already exists - update avatar/name if missing
+        updated = False
+        if picture and not user.avatar_url:
+            user.avatar_url = picture
+            updated = True
+        if name and (not user.full_name or user.full_name == email_clean.split("@")[0]):
+            user.full_name = name
+            updated = True
+        if updated:
+            db.commit()
+            db.refresh(user)
+
+    # 3. Generate system JWT
+    token = create_access_token({"sub": str(user.id)})
+
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserOut.model_validate(user),
+    )
 
 
 @router.post("/register", response_model=TokenResponse)

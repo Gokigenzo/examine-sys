@@ -7,10 +7,11 @@ import { Loader2, LogIn, UserPlus, AlertCircle, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import Link from "next/link";
+import GoogleSignInButton from "@/components/google-sign-in-button";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, register, user } = useAuth();
+  const { login, register, loginWithGoogle, user } = useAuth();
   const [tab, setTab] = useState<"login" | "register">("login");
 
   const [email, setEmail] = useState("");
@@ -42,6 +43,19 @@ export default function LoginPage() {
       router.push("/profile");
     } catch (err: any) {
       setError(err.message || "Đã xảy ra lỗi. Vui lòng thử lại.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credential: string) => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await loginWithGoogle(credential);
+      router.push("/profile");
+    } catch (err: any) {
+      setError(err.message || "Đăng nhập bằng tài khoản Google thất bại.");
     } finally {
       setSubmitting(false);
     }
@@ -105,6 +119,22 @@ export default function LoginPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* Google Sign-in */}
+          <div className="space-y-3">
+            <GoogleSignInButton
+              onSuccess={handleGoogleSuccess}
+              onError={(msg) => setError(msg)}
+              disabled={submitting}
+            />
+
+            <div className="relative flex items-center justify-center pt-1 pb-1">
+              <div className="border-t border-slate-200 w-full" />
+              <span className="bg-white px-3 text-xs text-slate-400 font-medium uppercase absolute">
+                Hoặc {tab === "login" ? "đăng nhập với email" : "đăng ký với email"}
+              </span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {tab === "register" && (

@@ -20,6 +20,8 @@ client/.next/
 client/out/
 client/.env.local
 client/.env*.local
+*.tsbuildinfo
+.vercel/
 
 # ========================
 # Database & Uploads

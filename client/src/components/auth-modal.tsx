@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/context/auth-context";
 import { X, Loader2, LogIn, UserPlus, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import GoogleSignInButton from "./google-sign-in-button";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ export default function AuthModal({
   onClose,
   defaultTab = "login",
 }: AuthModalProps) {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const [tab, setTab] = useState<"login" | "register">(defaultTab);
 
   const [email, setEmail] = useState("");
@@ -44,6 +45,19 @@ export default function AuthModal({
       onClose();
     } catch (err: any) {
       setError(err.message || "Đã xảy ra lỗi. Vui lòng thử lại.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credential: string) => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await loginWithGoogle(credential);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Đăng nhập bằng tài khoản Google thất bại.");
     } finally {
       setSubmitting(false);
     }
@@ -116,6 +130,22 @@ export default function AuthModal({
             <span>{error}</span>
           </div>
         )}
+
+        {/* Google Sign-in */}
+        <div className="space-y-3">
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={(msg) => setError(msg)}
+            disabled={submitting}
+          />
+
+          <div className="relative flex items-center justify-center pt-1 pb-1">
+            <div className="border-t border-slate-200 w-full" />
+            <span className="bg-white px-3 text-xs text-slate-400 font-medium uppercase absolute">
+              Hoặc {tab === "login" ? "đăng nhập với email" : "đăng ký với email"}
+            </span>
+          </div>
+        </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">

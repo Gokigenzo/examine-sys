@@ -93,8 +93,17 @@ export default function ProfilePage() {
       <Card className="border-2 border-slate-200 overflow-hidden shadow-sm">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 sm:p-8 text-white flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-5">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white/20 border-2 border-white/40 rounded-full flex items-center justify-center text-2xl sm:text-3xl font-black text-white shadow-inner">
-              {user.full_name ? user.full_name[0].toUpperCase() : "U"}
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white/20 border-2 border-white/40 rounded-full flex items-center justify-center text-2xl sm:text-3xl font-black text-white shadow-inner overflow-hidden flex-shrink-0">
+              {user.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user.full_name}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span>{user.full_name ? user.full_name[0].toUpperCase() : "U"}</span>
+              )}
             </div>
             <div className="space-y-1 text-center sm:text-left">
               <h1 className="text-2xl sm:text-3xl font-bold">

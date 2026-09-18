@@ -78,8 +78,17 @@ export default function Navbar() {
                       : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-800"
                   )}
                 >
-                  <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
-                    {user.full_name ? user.full_name[0].toUpperCase() : "U"}
+                  <div className="w-6 h-6 rounded-full overflow-hidden bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {user.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt={user.full_name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span>{user.full_name ? user.full_name[0].toUpperCase() : "U"}</span>
+                    )}
                   </div>
                   <span className="hidden sm:inline max-w-[120px] truncate">
                     {user.full_name}

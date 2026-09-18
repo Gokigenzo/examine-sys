@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "examine-sys-jwt-secret-key-2026-production-secure"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    GOOGLE_CLIENT_ID: str = ""
 
     @property
     def cors_origins_list(self) -> List[str]:

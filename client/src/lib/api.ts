@@ -212,6 +212,17 @@ export const api = {
     return res;
   },
 
+  loginWithGoogle: async (credential: string): Promise<TokenResponse> => {
+    const res = await fetchApi<TokenResponse>("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ credential }),
+    });
+    if (res.access_token) {
+      setAuthToken(res.access_token);
+    }
+    return res;
+  },
+
   getMe: (): Promise<User> => fetchApi("/api/auth/me"),
 
   getDashboard: (): Promise<UserDashboardStats> =>
