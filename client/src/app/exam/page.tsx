@@ -63,8 +63,8 @@ export default function ExamPage() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
-  // User answers in exam mode: questionId -> selectedOption (e.g. 'A')
-  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  // User answers in exam mode: questionId -> selectedOption (A/B/C/D string, true/false dict, or short answer text)
+  const [userAnswers, setUserAnswers] = useState<Record<number, any>>({});
 
   // Practice mode answers: questionId -> QuizSubmitResponse
   const [practiceResults, setPracticeResults] = useState<
@@ -208,19 +208,26 @@ export default function ExamPage() {
     }
   };
 
-  // ── Answer selection ──
+  // ── Helper to check if a question is answered ──
+  const isQuestionAnswered = (qId: number): boolean => {
+    const ans = userAnswers[qId];
+    if (ans === undefined || ans === null) return false;
+    if (typeof ans === "string") return ans.trim() !== "";
+    if (typeof ans === "object") return Object.keys(ans).length > 0;
+    return true;
+  };
+
+  // ── Multiple Choice Selection ──
   const handleSelectOption = async (optionKey: string) => {
     const currentQ = questions[currentIndex];
     if (!currentQ) return;
 
     if (mode === "exam") {
-      // In exam mode: update local selection map
       setUserAnswers((prev) => ({
         ...prev,
         [currentQ.id]: optionKey,
       }));
     } else {
-      // In practice mode: submit immediately to get instant explanation
       if (practiceResults[currentQ.id] || submittingPractice) return;
       setSubmittingPractice(true);
       try {
@@ -241,10 +248,58 @@ export default function ExamPage() {
     }
   };
 
+  // ── True / False Toggle for sub-statements a, b, c, d ──
+  const handleToggleTrueFalse = (subKey: string, val: boolean) => {
+    const currentQ = questions[currentIndex];
+    if (!currentQ) return;
+    const currentAns =
+      typeof userAnswers[currentQ.id] === "object" && userAnswers[currentQ.id] !== null
+        ? { ...userAnswers[currentQ.id] }
+        : {};
+    currentAns[subKey] = val;
+    setUserAnswers((prev) => ({
+      ...prev,
+      [currentQ.id]: currentAns,
+    }));
+  };
+
+  // ── Short Answer Input Change ──
+  const handleShortAnswerChange = (val: string) => {
+    const currentQ = questions[currentIndex];
+    if (!currentQ) return;
+    setUserAnswers((prev) => ({
+      ...prev,
+      [currentQ.id]: val,
+    }));
+  };
+
+  // ── Practice Mode Check Button for True/False & Short Answer ──
+  const handleCheckCurrentPracticeAnswer = async () => {
+    const currentQ = questions[currentIndex];
+    if (!currentQ || practiceResults[currentQ.id] || submittingPractice) return;
+    const ans = userAnswers[currentQ.id];
+    if (ans === undefined || ans === null || ans === "") {
+      alert("Vui lòng trả lời câu hỏi trước khi kiểm tra!");
+      return;
+    }
+    setSubmittingPractice(true);
+    try {
+      const res = await api.submitQuiz(currentQ.id, ans);
+      setPracticeResults((prev) => ({
+        ...prev,
+        [currentQ.id]: res,
+      }));
+    } catch (err: any) {
+      alert("Lỗi khi kiểm tra: " + (err.message || "Vui lòng thử lại"));
+    } finally {
+      setSubmittingPractice(false);
+    }
+  };
+
   // ── Submit exam (batch) ──
   const handleSubmitExam = async () => {
-    const unansweredCount =
-      questions.length - Object.keys(userAnswers).length;
+    const answeredCount = questions.filter((q) => isQuestionAnswered(q.id)).length;
+    const unansweredCount = questions.length - answeredCount;
     if (unansweredCount > 0) {
       const confirmSubmit = window.confirm(
         `Bạn còn ${unansweredCount} câu chưa làm. Bạn có chắc chắn muốn nộp bài không?`
@@ -593,8 +648,8 @@ export default function ExamPage() {
   // =========================================================================
   if (phase === "taking") {
     const currentQ = questions[currentIndex];
-    const answeredCount = Object.keys(userAnswers).length;
-    const isAnswered = currentQ ? userAnswers[currentQ.id] !== undefined : false;
+    const answeredCount = questions.filter((q) => isQuestionAnswered(q.id)).length;
+    const isAnswered = currentQ ? isQuestionAnswered(currentQ.id) : false;
     const practiceRes = currentQ ? practiceResults[currentQ.id] : null;
 
     return (
@@ -675,12 +730,28 @@ export default function ExamPage() {
             {currentQ && (
               <Card className="p-6 sm:p-8 relative shadow-sm border-2 border-slate-200">
                 {/* Card header */}
-                <div className="flex items-center justify-between mb-6 pb-4 border-b">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <span className="text-lg font-bold text-blue-600">
                       Câu {currentIndex + 1}
                     </span>
                     <span className="text-xs text-slate-400">/ {questions.length}</span>
+
+                    {/* Question Type Badge */}
+                    {currentQ.question_type === "true_false" ? (
+                      <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-800">
+                        Đúng / Sai (a, b, c, d)
+                      </span>
+                    ) : currentQ.question_type === "short_answer" ? (
+                      <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+                        Trả lời ngắn
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                        Trắc nghiệm 4 lựa chọn
+                      </span>
+                    )}
+
                     <span
                       className={`px-2.5 py-0.5 rounded text-xs font-semibold ${
                         DIFFICULTY_COLORS[currentQ.difficulty] || ""
@@ -701,53 +772,183 @@ export default function ExamPage() {
                   <MarkdownRender content={currentQ.question_text} />
                 </div>
 
-                {/* Options */}
-                <div className="space-y-3 mb-6">
-                  {Object.entries(currentQ.options).map(([optKey, optVal]) => {
-                    const isSelected = userAnswers[currentQ.id] === optKey;
+                {/* Question Interactive Options based on question_type */}
+                {currentQ.question_type === "true_false" ? (
+                  <div className="space-y-3 mb-6">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Chọn Đúng hoặc Sai cho mỗi nhận định:
+                    </div>
+                    {Object.entries(currentQ.options).map(([subKey, subVal]) => {
+                      const userAnsMap =
+                        typeof userAnswers[currentQ.id] === "object" &&
+                        userAnswers[currentQ.id] !== null
+                          ? userAnswers[currentQ.id]
+                          : {};
+                      const subAns = userAnsMap[subKey];
+                      const isSubCorrect = practiceRes?.sub_results?.[subKey];
+                      const correctSubVal = practiceRes?.correct_option?.[subKey];
 
-                    // In practice mode with result:
-                    let optionStyle =
-                      "border-slate-200 hover:border-slate-300 hover:bg-slate-50/70";
-                    if (mode === "practice" && practiceRes) {
-                      if (optKey === practiceRes.correct_option) {
-                        optionStyle =
-                          "bg-green-50 border-green-500 font-semibold text-green-900";
-                      } else if (isSelected && !practiceRes.is_correct) {
-                        optionStyle =
-                          "bg-red-50 border-red-500 text-red-900";
-                      }
-                    } else if (isSelected) {
-                      optionStyle =
-                        "border-blue-600 bg-blue-50/70 font-semibold text-blue-950 shadow-sm";
-                    }
-
-                    return (
-                      <button
-                        key={optKey}
-                        onClick={() => handleSelectOption(optKey)}
-                        disabled={
-                          mode === "practice" &&
-                          (!!practiceRes || submittingPractice)
-                        }
-                        className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-start gap-3.5 ${optionStyle}`}
-                      >
-                        <span
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-colors ${
-                            isSelected
-                              ? "bg-blue-600 text-white"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
+                      return (
+                        <div
+                          key={subKey}
+                          className="p-4 rounded-xl border-2 border-slate-200 bg-white hover:border-slate-300 transition-all space-y-2.5"
                         >
-                          {optKey}
-                        </span>
-                        <span className="pt-0.5 text-sm sm:text-base leading-relaxed">
-                          {optVal}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <div className="flex items-start gap-3">
+                            <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-800 font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
+                              {subKey})
+                            </span>
+                            <span className="text-sm sm:text-base text-slate-800 leading-relaxed flex-1 font-medium">
+                              {subVal}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2.5 pt-1 pl-9">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTrueFalse(subKey, true)}
+                              disabled={mode === "practice" && !!practiceRes}
+                              className={`px-4 py-1.5 rounded-lg text-xs sm:text-sm font-bold border-2 transition-all flex items-center gap-1.5 ${
+                                subAns === true
+                                  ? "bg-green-600 text-white border-green-600 shadow-xs"
+                                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                              }`}
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> Đúng
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTrueFalse(subKey, false)}
+                              disabled={mode === "practice" && !!practiceRes}
+                              className={`px-4 py-1.5 rounded-lg text-xs sm:text-sm font-bold border-2 transition-all flex items-center gap-1.5 ${
+                                subAns === false
+                                  ? "bg-red-600 text-white border-red-600 shadow-xs"
+                                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                              }`}
+                            >
+                              <XCircle className="w-4 h-4" /> Sai
+                            </button>
+
+                            {practiceRes && (
+                              <span className="ml-2 text-xs font-semibold">
+                                {isSubCorrect ? (
+                                  <span className="text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                                    ✓ Chính xác
+                                  </span>
+                                ) : (
+                                  <span className="text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                                    ✗ Sai (Đáp án: {correctSubVal ? "Đúng" : "Sai"})
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Practice mode check button for True/False */}
+                    {mode === "practice" && !practiceRes && (
+                      <div className="pt-2">
+                        <Button
+                          type="button"
+                          onClick={handleCheckCurrentPracticeAnswer}
+                          disabled={submittingPractice}
+                          className="bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-sm"
+                        >
+                          {submittingPractice ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                          )}
+                          Kiểm tra nhận định câu này
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ) : currentQ.question_type === "short_answer" ? (
+                  <div className="space-y-4 mb-6">
+                    <div className="p-5 rounded-xl border-2 border-amber-200 bg-amber-50/40 space-y-3">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Điền câu trả lời hoặc giá trị số của bạn:
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <input
+                          type="text"
+                          value={userAnswers[currentQ.id] || ""}
+                          onChange={(e) => handleShortAnswerChange(e.target.value)}
+                          disabled={mode === "practice" && !!practiceRes}
+                          placeholder="Nhập kết quả (VD: 6.32, 15, hoặc từ khóa)..."
+                          className="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl text-base font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white shadow-xs"
+                        />
+                        {mode === "practice" && !practiceRes && (
+                          <Button
+                            type="button"
+                            onClick={handleCheckCurrentPracticeAnswer}
+                            disabled={submittingPractice || !userAnswers[currentQ.id]}
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 px-5 rounded-xl shadow-xs"
+                          >
+                            {submittingPractice ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                            ) : (
+                              <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                            )}
+                            Kiểm tra
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        💡 Mẹo: Với số thập phân, bạn có thể nhập dấu chấm (.) hoặc dấu phẩy (,).
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Multiple Choice (4 options A, B, C, D) */
+                  <div className="space-y-3 mb-6">
+                    {Object.entries(currentQ.options).map(([optKey, optVal]) => {
+                      const isSelected = userAnswers[currentQ.id] === optKey;
+
+                      let optionStyle =
+                        "border-slate-200 hover:border-slate-300 hover:bg-slate-50/70";
+                      if (mode === "practice" && practiceRes) {
+                        if (optKey === practiceRes.correct_option) {
+                          optionStyle =
+                            "bg-green-50 border-green-500 font-semibold text-green-900";
+                        } else if (isSelected && !practiceRes.is_correct) {
+                          optionStyle =
+                            "bg-red-50 border-red-500 text-red-900";
+                        }
+                      } else if (isSelected) {
+                        optionStyle =
+                          "border-blue-600 bg-blue-50/70 font-semibold text-blue-950 shadow-sm";
+                      }
+
+                      return (
+                        <button
+                          key={optKey}
+                          onClick={() => handleSelectOption(optKey)}
+                          disabled={
+                            mode === "practice" &&
+                            (!!practiceRes || submittingPractice)
+                          }
+                          className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-start gap-3.5 ${optionStyle}`}
+                        >
+                          <span
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-colors ${
+                              isSelected
+                                ? "bg-blue-600 text-white"
+                                : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {optKey}
+                          </span>
+                          <span className="pt-0.5 text-sm sm:text-base leading-relaxed">
+                            {optVal}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Instant Feedback in Practice Mode */}
                 {mode === "practice" && practiceRes && (
@@ -767,6 +968,10 @@ export default function ExamPage() {
                       <div className="font-bold text-base flex items-center gap-2">
                         {practiceRes.is_correct
                           ? "Chính xác! 🎉"
+                          : currentQ.question_type === "short_answer"
+                          ? `Chưa chính xác. Đáp án đúng: ${practiceRes.correct_option}`
+                          : currentQ.question_type === "true_false"
+                          ? "Một số nhận định chưa chính xác."
                           : `Chưa đúng. Đáp án đúng là ${practiceRes.correct_option}`}
                       </div>
                       <div className="leading-relaxed whitespace-pre-wrap">
@@ -848,8 +1053,12 @@ export default function ExamPage() {
               <div className="grid grid-cols-5 sm:grid-cols-6 gap-2 max-h-[360px] overflow-y-auto pr-1">
                 {questions.map((q, idx) => {
                   const isCur = idx === currentIndex;
-                  const isAns = userAnswers[q.id] !== undefined;
+                  const isAns = isQuestionAnswered(q.id);
                   const pRes = practiceResults[q.id];
+
+                  let typeTag = "TN";
+                  if (q.question_type === "true_false") typeTag = "Đ/S";
+                  if (q.question_type === "short_answer") typeTag = "Điền";
 
                   let btnStyle = "bg-slate-100 text-slate-700 hover:bg-slate-200";
                   if (mode === "practice" && pRes) {
@@ -864,11 +1073,14 @@ export default function ExamPage() {
                     <button
                       key={q.id}
                       onClick={() => setCurrentIndex(idx)}
-                      className={`h-10 rounded-lg text-xs font-semibold transition-all border ${btnStyle} ${
+                      className={`h-11 rounded-lg text-xs font-semibold transition-all border flex flex-col items-center justify-center p-0.5 ${btnStyle} ${
                         isCur ? "ring-2 ring-blue-500 ring-offset-2" : ""
                       }`}
                     >
-                      {idx + 1}
+                      <span className="font-bold leading-none">{idx + 1}</span>
+                      <span className="text-[9px] opacity-80 font-normal leading-none mt-0.5">
+                        {typeTag}
+                      </span>
                     </button>
                   );
                 })}
@@ -1085,11 +1297,46 @@ export default function ExamPage() {
                 >
                   {/* Question header */}
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-slate-900">
                         Câu {idx + 1}
                       </span>
-                      {item.is_correct ? (
+                      {/* Question Type Badge */}
+                      <span className="text-xs px-2 py-0.5 rounded font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                        {originalQ.question_type === "true_false"
+                          ? "Phần II: Đúng / Sai"
+                          : originalQ.question_type === "short_answer"
+                          ? "Phần III: Trả lời ngắn"
+                          : "Phần I: Trắc nghiệm 4 lựa chọn"}
+                      </span>
+
+                      {/* Correct / Partial / Wrong Status Badge */}
+                      {originalQ.question_type === "true_false" ? (
+                        (() => {
+                          const correctSubCount = item.sub_results
+                            ? Object.values(item.sub_results).filter(Boolean).length
+                            : item.is_correct ? 4 : 0;
+                          if (item.is_correct) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Đúng hoàn toàn (4/4 ý)
+                              </span>
+                            );
+                          } else if (correctSubCount > 0) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" /> Đúng một phần ({correctSubCount}/4 ý)
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-800 px-2 py-0.5 rounded">
+                                <XCircle className="w-3.5 h-3.5" /> Chưa đúng (0/4 ý)
+                              </span>
+                            );
+                          }
+                        })()
+                      ) : item.is_correct ? (
                         <span className="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-2 py-0.5 rounded">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Đúng
                         </span>
@@ -1107,44 +1354,147 @@ export default function ExamPage() {
                     <MarkdownRender content={originalQ.question_text} />
                   </div>
 
-                  {/* Options */}
-                  <div className="space-y-2 mb-6">
-                    {Object.entries(originalQ.options).map(([optKey, optVal]) => {
-                      const isCorrectOpt = optKey === item.correct_option;
-                      const isUserSelected = optKey === item.selected_option;
+                  {/* Answer / Options Breakdown */}
+                  {originalQ.question_type === "true_false" ? (
+                    <div className="space-y-3 mb-6">
+                      {Object.entries(originalQ.options).map(([optKey, optVal]) => {
+                        const keyLower = optKey.toLowerCase();
+                        const userChoice =
+                          item.selected_option && typeof item.selected_option === "object"
+                            ? item.selected_option[keyLower] ?? item.selected_option[optKey]
+                            : undefined;
 
-                      let rowClass = "border-slate-200 bg-white";
-                      if (isCorrectOpt) {
-                        rowClass =
-                          "border-green-500 bg-green-50 font-semibold text-green-900";
-                      } else if (isUserSelected && !item.is_correct) {
-                        rowClass =
-                          "border-red-500 bg-red-50 text-red-900 line-through opacity-85";
-                      }
+                        let correctChoice: boolean | undefined = undefined;
+                        if (item.correct_option && typeof item.correct_option === "object") {
+                          correctChoice =
+                            item.correct_option[keyLower] ?? item.correct_option[optKey];
+                        }
 
-                      return (
-                        <div
-                          key={optKey}
-                          className={`p-3 rounded-lg border-2 text-sm flex items-start gap-2.5 ${rowClass}`}
-                        >
-                          <span className="font-bold w-6 text-center">
-                            {optKey}.
+                        const isSubCorrect =
+                          item.sub_results && item.sub_results[keyLower] !== undefined
+                            ? item.sub_results[keyLower]
+                            : (userChoice !== undefined && userChoice === correctChoice);
+
+                        return (
+                          <div
+                            key={optKey}
+                            className={`p-3.5 rounded-xl border-2 text-sm flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                              isSubCorrect
+                                ? "border-green-300 bg-green-50/30"
+                                : "border-red-200 bg-red-50/20"
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5 flex-1">
+                              <span className="font-bold w-6 text-slate-800 uppercase shrink-0">
+                                {optKey})
+                              </span>
+                              <span className="text-slate-800 leading-relaxed">{optVal}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                              <div className="text-xs px-2.5 py-1 rounded-md bg-white border border-slate-200 flex items-center gap-1.5 shadow-sm">
+                                <span className="text-slate-500">Bạn chọn:</span>
+                                <span
+                                  className={`font-bold ${
+                                    userChoice === undefined
+                                      ? "text-slate-400"
+                                      : isSubCorrect
+                                      ? "text-green-700"
+                                      : "text-red-700"
+                                  }`}
+                                >
+                                  {userChoice === true
+                                    ? "Đúng"
+                                    : userChoice === false
+                                    ? "Sai"
+                                    : "Chưa chọn"}
+                                </span>
+                              </div>
+                              <div className="text-xs px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 flex items-center gap-1.5 shadow-sm">
+                                <span className="font-medium text-emerald-700">Đáp án:</span>
+                                <span className="font-extrabold text-emerald-900">
+                                  {correctChoice === true
+                                    ? "Đúng"
+                                    : correctChoice === false
+                                    ? "Sai"
+                                    : "—"}
+                                </span>
+                              </div>
+                              {isSubCorrect ? (
+                                <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-red-500 shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : originalQ.question_type === "short_answer" ? (
+                    <div className="p-4 rounded-xl border-2 mb-6 bg-slate-50 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-600 font-medium">Câu trả lời của bạn:</span>
+                          <span
+                            className={`font-bold font-mono px-3 py-1 rounded text-base ${
+                              item.is_correct
+                                ? "bg-green-100 text-green-800 border border-green-300"
+                                : "bg-red-100 text-red-800 border border-red-300 line-through"
+                            }`}
+                          >
+                            {item.selected_option !== undefined &&
+                            item.selected_option !== null &&
+                            String(item.selected_option).trim() !== ""
+                              ? String(item.selected_option)
+                              : "(Chưa trả lời)"}
                           </span>
-                          <span className="flex-1">{optVal}</span>
-                          {isCorrectOpt && (
-                            <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold">
-                              Đáp án đúng
-                            </span>
-                          )}
-                          {isUserSelected && !isCorrectOpt && (
-                            <span className="text-xs bg-red-600 text-white px-2 py-0.5 rounded font-bold">
-                              Bạn đã chọn
-                            </span>
-                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-600 font-medium">Đáp án chính xác:</span>
+                          <span className="font-extrabold font-mono px-3 py-1 rounded text-base bg-emerald-600 text-white shadow-sm">
+                            {String(item.correct_option ?? "")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 mb-6">
+                      {Object.entries(originalQ.options).map(([optKey, optVal]) => {
+                        const isCorrectOpt = optKey === item.correct_option;
+                        const isUserSelected = optKey === item.selected_option;
+
+                        let rowClass = "border-slate-200 bg-white";
+                        if (isCorrectOpt) {
+                          rowClass =
+                            "border-green-500 bg-green-50 font-semibold text-green-900";
+                        } else if (isUserSelected && !item.is_correct) {
+                          rowClass =
+                            "border-red-500 bg-red-50 text-red-900 line-through opacity-85";
+                        }
+
+                        return (
+                          <div
+                            key={optKey}
+                            className={`p-3 rounded-lg border-2 text-sm flex items-start gap-2.5 ${rowClass}`}
+                          >
+                            <span className="font-bold w-6 text-center">
+                              {optKey}.
+                            </span>
+                            <span className="flex-1">{optVal}</span>
+                            {isCorrectOpt && (
+                              <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold">
+                                Đáp án đúng
+                              </span>
+                            )}
+                            {isUserSelected && !isCorrectOpt && (
+                              <span className="text-xs bg-red-600 text-white px-2 py-0.5 rounded font-bold">
+                                Bạn đã chọn
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Detailed Explanation from file */}
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-sm space-y-1.5">

@@ -66,11 +66,14 @@ export interface Summary {
   created_at: string;
 }
 
+export type QuestionType = "multiple_choice" | "true_false" | "short_answer";
+
 export interface OptionsSchema {
-  A: string;
-  B: string;
-  C: string;
-  D: string;
+  A?: string;
+  B?: string;
+  C?: string;
+  D?: string;
+  [key: string]: string | undefined;
 }
 
 export interface QuizQuestion {
@@ -78,16 +81,18 @@ export interface QuizQuestion {
   chapter_id: number;
   document_id: number;
   question_text: string;
-  options: OptionsSchema;
+  question_type?: QuestionType;
+  options: Record<string, string>;
   difficulty: "easy" | "medium" | "hard";
-  correct_option?: string;
+  correct_option?: any;
   brief_explanation?: string;
   detailed_explanation?: string;
 }
 
 export interface QuizSubmitResponse {
   is_correct: boolean;
-  correct_option: string;
+  correct_option: any;
+  sub_results?: Record<string, boolean> | null;
   brief_explanation: string;
   detailed_explanation: string;
   wrong_count: number;
@@ -110,9 +115,11 @@ export interface PracticeWrongItem {
 
 export interface ExamAnswerResult {
   question_id: number;
-  selected_option: string | null;
+  question_type?: QuestionType;
+  selected_option: any;
   is_correct: boolean;
-  correct_option: string;
+  sub_results?: Record<string, boolean> | null;
+  correct_option: any;
   brief_explanation: string;
   detailed_explanation: string;
   wrong_count: number;
@@ -303,7 +310,7 @@ export const api = {
   /* ── Quiz ── */
   submitQuiz: (
     questionId: number,
-    selectedOption: string
+    selectedOption: any
   ): Promise<QuizSubmitResponse> =>
     fetchApi("/api/quiz/submit", {
       method: "POST",
@@ -354,7 +361,7 @@ export const api = {
   },
 
   submitExamBatch: (
-    answers: { question_id: number; selected_option?: string | null }[],
+    answers: { question_id: number; selected_option?: any }[],
     chapterId?: number,
     timeSpentSeconds?: number,
     mode?: string

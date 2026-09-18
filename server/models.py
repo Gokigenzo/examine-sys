@@ -35,6 +35,12 @@ class Difficulty(str, enum.Enum):
     hard = "hard"
 
 
+class QuestionType(str, enum.Enum):
+    multiple_choice = "multiple_choice"  # Trắc nghiệm 4 phương án A, B, C, D
+    true_false = "true_false"            # Trắc nghiệm Đúng / Sai (4 ý a, b, c, d)
+    short_answer = "short_answer"        # Trắc nghiệm trả lời ngắn (số hoặc từ)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -100,6 +106,7 @@ class Question(Base):
     chapter_id = Column(Integer, ForeignKey("chapters.id"), nullable=False)
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
     question_text = Column(Text, nullable=False)
+    question_type = Column(String(50), default=QuestionType.multiple_choice.value, nullable=False)
     options = Column(JSON, nullable=False)
     correct_option = Column(String, nullable=False)
     difficulty = Column(Enum(Difficulty), nullable=False)

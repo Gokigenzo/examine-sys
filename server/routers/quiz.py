@@ -13,6 +13,8 @@ from ..schemas import (
     UserProgressOut,
 )
 from ..services.auth_service import get_optional_current_user
+from ..services.grading_service import evaluate_question_answer
+import json
 
 router = APIRouter(prefix="/api/quiz", tags=["Quiz"])
 
@@ -31,7 +33,9 @@ async def submit_answer(
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    is_correct = req.selected_option.upper() == question.correct_option.upper()
+    is_correct, sub_results, _ = evaluate_question_answer(
+        question.question_type, question.correct_option, req.selected_option
+    )
     user_id = current_user.id if current_user else None
 
     # Find progress for this user and question
@@ -62,9 +66,18 @@ async def submit_answer(
     db.commit()
     db.refresh(progress)
 
+    # Parse correct_option if true_false JSON
+    parsed_correct = question.correct_option
+    if question.question_type == "true_false":
+        try:
+            parsed_correct = json.loads(question.correct_option)
+        except Exception:
+            pass
+
     return QuizSubmitResponse(
         is_correct=is_correct,
-        correct_option=question.correct_option,
+        correct_option=parsed_correct,
+        sub_results=sub_results,
         brief_explanation=question.brief_explanation,
         detailed_explanation=question.detailed_explanation,
         wrong_count=progress.wrong_count,

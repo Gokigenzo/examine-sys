@@ -60,5 +60,14 @@ def migrate_db():
                     conn.execute(text("ALTER TABLE user_progress ADD COLUMN user_id INTEGER"))
                     conn.commit()
                 logger.info("Migrated user_progress table: added user_id column")
+
+        # Check questions.question_type
+        if "questions" in tables:
+            q_cols = [c["name"] for c in inspector.get_columns("questions")]
+            if "question_type" not in q_cols:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE questions ADD COLUMN question_type VARCHAR(50) DEFAULT 'multiple_choice'"))
+                    conn.commit()
+                logger.info("Migrated questions table: added question_type column")
     except Exception as e:
         logger.warning(f"Database migration check encountered an issue: {e}")

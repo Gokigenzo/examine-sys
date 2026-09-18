@@ -169,19 +169,39 @@ Trả về một MẢNG JSON, mỗi phần tử có cấu trúc:
 
 def extract_exam_questions(text: str) -> List[Dict[str, Any]]:
     """
-    Extract existing exam questions, options, correct answers, and explanations
-    directly from a document that already contains an exam test.
+    Extract existing exam questions from a document supporting 3 modern Vietnamese exam types:
+    1. multiple_choice: Trắc nghiệm 4 phương án lựa chọn (A, B, C, D)
+    2. true_false: Trắc nghiệm Đúng / Sai (4 nhận định a, b, c, d)
+    3. short_answer: Trắc nghiệm trả lời ngắn (điền số hoặc từ khóa)
     """
-    prompt = f"""Bạn là một chuyên gia xử lý và số hóa đề thi.
-Văn bản dưới đây là một ĐỀ THI TRẮC NGHIỆM ĐÃ CÓ SẴN (bao gồm danh sách câu hỏi, các lựa chọn A, B, C, D, và phần bảng đáp án / lời giải thích chi tiết ở cuối hoặc kèm theo mỗi câu).
+    prompt = f"""Bạn là một chuyên gia số hóa đề thi chuyên nghiệp theo chuẩn Bộ Giáo dục & Đào tạo Việt Nam (chương trình GDPT 2018 mới nhất).
+Văn bản dưới đây là một ĐỀ THI (bao gồm danh sách câu hỏi, các lựa chọn, bảng nhận định Đúng/Sai, câu hỏi trả lời ngắn, và phần bảng đáp án / lời giải thích chi tiết ở cuối hoặc kèm theo mỗi câu).
 
-Nhiệm vụ của bạn là TRÍCH XUẤT NGUYÊN VẸN toàn bộ các câu hỏi từ tài liệu thành cấu trúc dữ liệu JSON chuẩn:
-1. question_text: Nội dung câu hỏi chính xác từ bài (bỏ tiền tố 'Câu 1:', 'Câu 2:' nếu có).
-2. options: Dictionary 4 phương án {{"A": "...", "B": "...", "C": "...", "D": "..."}}.
-3. correct_option: Đáp án đúng chính xác (A, B, C hoặc D) được tra cứu từ "Bảng đáp án", "Đáp án nhanh", hoặc phần giải thích trong tài liệu.
-4. difficulty: Ước lượng độ khó ("easy", "medium", hoặc "hard") dựa trên nội dung câu hỏi.
-5. brief_explanation: Tóm tắt ngắn gọn lý do chọn đáp án này (1-2 câu).
-6. detailed_explanation: Lời giải thích chi tiết được lấy TRỰC TIẾP từ mục "Hướng dẫn giải thích chi tiết" hoặc "Giải thích" trong tài liệu (bao gồm cả trích dẫn Slide, giáo trình nếu tài liệu có ghi). Nếu tài liệu không có giải thích cho câu đó, hãy tự giải thích chi tiết dựa vào ngữ cảnh bài học.
+Nhiệm vụ của bạn là TRÍCH XUẤT NGUYÊN VẸN toàn bộ các câu hỏi từ tài liệu thành cấu trúc dữ liệu JSON chuẩn, phân loại chính xác 3 dạng câu hỏi sau:
+
+1. Dạng 1: "multiple_choice" (Trắc nghiệm nhiều lựa chọn - 4 phương án A, B, C, D):
+   - question_type: "multiple_choice"
+   - question_text: Nội dung câu hỏi chính xác (bỏ tiền tố 'Câu 1:', 'Câu 2:').
+   - options: {{"A": "nội dung A", "B": "nội dung B", "C": "nội dung C", "D": "nội dung D"}}
+   - correct_option: "A", "B", "C" hoặc "D" (tra cứu từ bảng đáp án hoặc lời giải).
+   - brief_explanation: Tóm tắt ngắn gọn lý do chọn đáp án này (1-2 câu).
+   - detailed_explanation: Lời giải chi tiết từ tài liệu.
+
+2. Dạng 2: "true_false" (Trắc nghiệm Đúng / Sai gồm 4 nhận định a, b, c, d):
+   - question_type: "true_false"
+   - question_text: Nội dung phần dẫn/bối cảnh của câu hỏi.
+   - options: {{"a": "Nội dung nhận định a", "b": "Nội dung nhận định b", "c": "Nội dung nhận định c", "d": "Nội dung nhận định d"}}
+   - correct_option: {{"a": true/false, "b": true/false, "c": true/false, "d": true/false}} (tra cứu từ bảng đáp án Đ-S của đề thi, true là Đúng, false là Sai).
+   - brief_explanation: Tóm tắt kết quả (ví dụ: "a-Đúng, b-Sai, c-Đúng, d-Sai").
+   - detailed_explanation: Lời giải chi tiết giải thích rõ vì sao từng ý a, b, c, d là Đúng hay Sai.
+
+3. Dạng 3: "short_answer" (Trắc nghiệm trả lời ngắn):
+   - question_type: "short_answer"
+   - question_text: Nội dung câu hỏi (ví dụ: "Phần năng lượng chuyển thành nhiệt là x . 10^6 J. Tìm x...").
+   - options: {{}} (object rỗng).
+   - correct_option: Giá trị kết quả chính xác (dạng chuỗi, ví dụ: "6.32" hoặc "15").
+   - brief_explanation: Kết quả đáp án ngắn gọn kèm đơn vị.
+   - detailed_explanation: Các bước tính toán chi tiết dẫn đến kết quả.
 
 Văn bản tài liệu:
 {text}
@@ -190,17 +210,31 @@ YÊU CẦU ĐẦU RA:
 Trả về một MẢNG JSON các câu hỏi (không thêm văn bản ngoài JSON):
 [
   {{
-    "question_text": "Nội dung câu hỏi...",
-    "options": {{
-      "A": "...",
-      "B": "...",
-      "C": "...",
-      "D": "..."
-    }},
+    "question_type": "multiple_choice",
+    "question_text": "...",
+    "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
     "correct_option": "A",
     "difficulty": "medium",
-    "brief_explanation": "Giải thích ngắn gọn...",
-    "detailed_explanation": "Giải thích chi tiết trích xuất từ tài liệu..."
+    "brief_explanation": "...",
+    "detailed_explanation": "..."
+  }},
+  {{
+    "question_type": "true_false",
+    "question_text": "...",
+    "options": {{"a": "...", "b": "...", "c": "...", "d": "..."}},
+    "correct_option": {{"a": true, "b": false, "c": true, "d": false}},
+    "difficulty": "hard",
+    "brief_explanation": "...",
+    "detailed_explanation": "..."
+  }},
+  {{
+    "question_type": "short_answer",
+    "question_text": "...",
+    "options": {{}},
+    "correct_option": "6.32",
+    "difficulty": "hard",
+    "brief_explanation": "...",
+    "detailed_explanation": "..."
   }}
 ]"""
 

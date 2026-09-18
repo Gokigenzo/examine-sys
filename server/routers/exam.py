@@ -28,6 +28,8 @@ from ..schemas import (
 from ..services.parser import parse_file
 from ..services.ai_service import extract_exam_questions
 from ..services.auth_service import get_optional_current_user
+from ..services.grading_service import evaluate_question_answer
+import json
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -125,12 +127,28 @@ async def quick_create_exam(
         if diff_str not in ["easy", "medium", "hard"]:
             diff_str = "medium"
 
+        q_type = str(item.get("question_type", "multiple_choice")).lower().strip()
+        if q_type not in ["multiple_choice", "true_false", "short_answer"]:
+            q_type = "multiple_choice"
+
+        raw_correct = item.get("correct_option")
+        if q_type == "true_false":
+            if isinstance(raw_correct, dict):
+                correct_str = json.dumps(raw_correct)
+            else:
+                correct_str = str(raw_correct)
+        elif q_type == "short_answer":
+            correct_str = str(raw_correct).strip() if raw_correct is not None else ""
+        else:
+            correct_str = str(raw_correct).upper().strip() if raw_correct is not None else "A"
+
         new_q = Question(
             chapter_id=chapter.id,
             document_id=doc.id,
             question_text=item.get("question_text", "").strip(),
+            question_type=q_type,
             options=item.get("options", {}),
-            correct_option=str(item.get("correct_option", "A")).upper().strip(),
+            correct_option=correct_str,
             difficulty=Difficulty(diff_str),
             brief_explanation=item.get("brief_explanation", "").strip(),
             detailed_explanation=item.get("detailed_explanation", "").strip(),
@@ -159,7 +177,7 @@ async def submit_exam_batch(
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
-    Submit multiple questions at once (Exam Mode), evaluate answers,
+    Submit multiple questions at once (Exam Mode), evaluate answers across all 3 question types,
     update user-specific progress (mark wrong answers), record exam attempt,
     and return full score breakdown.
     """
@@ -168,6 +186,7 @@ async def submit_exam_batch(
     correct = 0
     wrong = 0
     skipped = 0
+    total_earned_ratio = 0.0
     results: List[ExamAnswerResult] = []
     user_id = current_user.id if current_user else None
     attempt_chapter_id = req.chapter_id
@@ -180,12 +199,25 @@ async def submit_exam_batch(
         if not attempt_chapter_id:
             attempt_chapter_id = q.chapter_id
 
-        sel = item.selected_option.strip().upper() if item.selected_option else None
-        is_answered = sel is not None and sel != ""
+        sel = item.selected_option
+        is_answered = False
+        if sel is not None:
+            if isinstance(sel, str) and sel.strip():
+                is_answered = True
+            elif isinstance(sel, dict) and any(v is not None for v in sel.values()):
+                is_answered = True
+            elif not isinstance(sel, (str, dict)) and str(sel).strip():
+                is_answered = True
+
+        sub_results = None
+        current_wrong_count = 0
 
         if is_answered:
             answered += 1
-            is_corr = sel == q.correct_option.upper()
+            is_corr, sub_results, score_ratio = evaluate_question_answer(
+                q.question_type, q.correct_option, sel
+            )
+            total_earned_ratio += score_ratio
             if is_corr:
                 correct += 1
             else:
@@ -246,19 +278,29 @@ async def submit_exam_batch(
             db.refresh(prog)
             current_wrong_count = prog.wrong_count
 
+        # Format correct_option if true_false JSON
+        parsed_correct = q.correct_option
+        if q.question_type == "true_false":
+            try:
+                parsed_correct = json.loads(q.correct_option)
+            except Exception:
+                pass
+
         results.append(
             ExamAnswerResult(
                 question_id=q.id,
+                question_type=q.question_type,
                 selected_option=sel,
                 is_correct=is_corr,
-                correct_option=q.correct_option,
+                sub_results=sub_results,
+                correct_option=parsed_correct,
                 brief_explanation=q.brief_explanation,
                 detailed_explanation=q.detailed_explanation,
                 wrong_count=current_wrong_count,
             )
         )
 
-    score = round((correct / total * 10), 1) if total > 0 else 0.0
+    score = round((total_earned_ratio / total * 10), 1) if total > 0 else 0.0
 
     # Record ExamAttempt in user's history
     if attempt_chapter_id:

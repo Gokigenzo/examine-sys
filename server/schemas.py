@@ -102,10 +102,13 @@ class SummaryOut(BaseModel):
 # ───────────── Question & Quiz Schemas ───────────── #
 
 class OptionsSchema(BaseModel):
-    A: str
-    B: str
-    C: str
-    D: str
+    A: Optional[str] = None
+    B: Optional[str] = None
+    C: Optional[str] = None
+    D: Optional[str] = None
+
+    class Config:
+        extra = "allow"
 
 
 class QuestionOut(BaseModel):
@@ -113,7 +116,8 @@ class QuestionOut(BaseModel):
     chapter_id: int
     document_id: int
     question_text: str
-    options: OptionsSchema
+    question_type: str = "multiple_choice"
+    options: Dict[str, Any]
     difficulty: Difficulty
 
     class Config:
@@ -122,12 +126,13 @@ class QuestionOut(BaseModel):
 
 class QuizSubmitRequest(BaseModel):
     question_id: int
-    selected_option: str
+    selected_option: Any
 
 
 class QuizSubmitResponse(BaseModel):
     is_correct: bool
-    correct_option: str
+    correct_option: Any
+    sub_results: Optional[Dict[str, bool]] = None
     brief_explanation: str
     detailed_explanation: str
     wrong_count: int
@@ -162,7 +167,7 @@ class PracticeWrongOut(BaseModel):
 
 class ExamAnswerItem(BaseModel):
     question_id: int
-    selected_option: Optional[str] = None
+    selected_option: Optional[Any] = None
 
 
 class ExamSubmitBatchRequest(BaseModel):
@@ -174,9 +179,11 @@ class ExamSubmitBatchRequest(BaseModel):
 
 class ExamAnswerResult(BaseModel):
     question_id: int
-    selected_option: Optional[str]
+    question_type: Optional[str] = "multiple_choice"
+    selected_option: Optional[Any] = None
     is_correct: bool
-    correct_option: str
+    sub_results: Optional[Dict[str, bool]] = None
+    correct_option: Any
     brief_explanation: str
     detailed_explanation: str
     wrong_count: int
