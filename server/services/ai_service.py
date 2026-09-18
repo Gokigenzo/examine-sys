@@ -34,16 +34,130 @@ def get_client() -> genai.Client:
     return _client
 
 
+def repair_json_string(s: str) -> str:
+    """
+    Repair common LLM JSON syntax anomalies:
+    1. Unescaped backslashes in LaTeX math (e.g. \\cdot, \\text, \\frac, \\alpha, \\degree, etc.)
+    2. Unescaped control characters (raw newlines, tabs, carriage returns inside string literals)
+    3. Trailing commas before closing brackets and braces
+    """
+    s = s.strip()
+    if s.startswith("```json"):
+        s = s[7:]
+    elif s.startswith("```"):
+        s = s[3:]
+    if s.endswith("```"):
+        s = s[:-3]
+    s = s.strip()
+
+    result = []
+    in_string = False
+    i = 0
+    n = len(s)
+
+    while i < n:
+        c = s[i]
+        if not in_string:
+            if c == '"':
+                in_string = True
+            result.append(c)
+            i += 1
+        else:
+            if c == "\\":
+                if i + 1 < n:
+                    nxt = s[i + 1]
+                    if nxt in ('"', "\\", "/"):
+                        result.append("\\" + nxt)
+                        i += 2
+                    elif nxt in ("b", "f", "n", "r", "t"):
+                        # If followed by another letter, it's a LaTeX command (e.g. \\text, \\frac, \\nu, \\rho, \\to, \\times)
+                        if i + 2 < n and s[i + 2].isalpha():
+                            result.append("\\\\")
+                            i += 1
+                        else:
+                            result.append("\\" + nxt)
+                            i += 2
+                    elif nxt == "u" and i + 5 < n and all(ch in "0123456789abcdefABCDEF" for ch in s[i+2:i+6]):
+                        result.append(s[i:i+6])
+                        i += 6
+                    else:
+                        # Invalid escape sequence like \\alpha, \\cdot, \\circ, \\degree, etc.
+                        result.append("\\\\")
+                        i += 1
+                else:
+                    result.append("\\\\")
+                    i += 1
+            elif c == '"':
+                in_string = False
+                result.append(c)
+                i += 1
+            elif c == "\n":
+                # Raw unescaped newline in JSON string literal
+                result.append("\\n")
+                i += 1
+            elif c == "\r":
+                result.append("\\r")
+                i += 1
+            elif c == "\t":
+                result.append("\\t")
+                i += 1
+            else:
+                result.append(c)
+                i += 1
+
+    fixed = "".join(result)
+    # Remove trailing commas before } or ]
+    fixed = re.sub(r",\s*([\]\}])", r"\1", fixed)
+    return fixed
+
+
+def parse_ai_json_response(raw_text: str) -> Any:
+    """Safely parse JSON response from AI models with multiple fallback repair strategies."""
+    basic = raw_text.strip()
+    if basic.startswith("```json"):
+        basic = basic[7:]
+    elif basic.startswith("```"):
+        basic = basic[3:]
+    if basic.endswith("```"):
+        basic = basic[:-3]
+    basic = basic.strip()
+
+    # Strategy 1: standard json.loads
+    try:
+        return json.loads(basic)
+    except Exception:
+        pass
+
+    # Strategy 2: repaired string with escaped LaTeX backslashes & sanitized control characters
+    repaired = repair_json_string(raw_text)
+    try:
+        return json.loads(repaired)
+    except Exception:
+        pass
+
+    # Strategy 3: extract outer JSON array or object from repaired text
+    match = re.search(r"(\[.*\]|\{.*\})", repaired, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            pass
+
+    # Strategy 4: extract outer JSON array or object from basic text
+    match_orig = re.search(r"(\[.*\]|\{.*\})", basic, re.DOTALL)
+    if match_orig:
+        try:
+            return json.loads(match_orig.group(1))
+        except Exception:
+            pass
+
+    # Final attempt on repaired string so exact syntax error is clear if still failing
+    return json.loads(repaired)
+
+
 def _clean_json_text(text: str) -> str:
-    """Strip markdown code fence if present in model response."""
-    text = text.strip()
-    if text.startswith("```json"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    return text.strip()
+    """Backward-compatible helper returning cleaned and repaired JSON string."""
+    return repair_json_string(text)
 
 
 def _generate_with_fallback(prompt: str, config: types.GenerateContentConfig) -> str:
@@ -105,7 +219,7 @@ Trả về định dạng JSON chính xác như sau:
                 response_mime_type="application/json",
             ),
         )
-        return json.loads(_clean_json_text(raw_text))
+        return parse_ai_json_response(raw_text)
     except Exception as e:
         logger.error(f"Failed to generate summary: {str(e)}")
         raise Exception(f"Lỗi khi gọi API AI: {str(e)}")
@@ -158,7 +272,7 @@ Trả về một MẢNG JSON, mỗi phần tử có cấu trúc:
                 response_mime_type="application/json",
             ),
         )
-        questions = json.loads(_clean_json_text(raw_text))
+        questions = parse_ai_json_response(raw_text)
         if not isinstance(questions, list):
             questions = [questions]
         return questions
@@ -211,6 +325,8 @@ Trích xuất toàn bộ các câu hỏi từ tài liệu thành cấu trúc d�
 - Sửa triệt để các lỗi trích xuất ký tự OCR từ file:
   * Ví dụ: `10!` hoặc `106` trong công thức vật lý thực chất là lỗi hiển thị của số mũ 10^6. Phải chuẩn hóa thành `$10^6$` hoặc `10^6`.
   * Bao bọc tất cả công thức toán, lý, hóa trong ký hiệu LaTeX `$ ... $`, ví dụ: `$x \\cdot 10^6\\text{{ J}}$`, `$E = 2,52 \\cdot 10^6\\text{{ cal}}$`, `$L = 2,4 \\cdot 10^6\\text{{ J/kg}}$`, `$D = 1,0 \\cdot 10^3\\text{{ kg/m}}^3$`, `$25^\\circ\\text{{C}}$`, `$H_2SO_4$`.
+- LƯU Ý KỸ THUẬT VỀ ĐỊNH DẠNG JSON:
+  * Khi viết các dấu gạch chéo ngược LaTeX trong chuỗi JSON, PHẢI DÙNG 2 DẤU GẠCH CHÉO NGƯỢC `\\\\` (ví dụ: `\\\\cdot`, `\\\\text{{...}}`, `\\\\frac{{...}}`, `\\\\circ`, `\\\\alpha`) để đảm bảo cú pháp JSON hợp lệ tuyệt đối.
 
 ======================================================================
 ⭐ CÁC DẠNG CÂU HỎI:
@@ -267,7 +383,7 @@ Trả về DUY NHẤT một MẢNG JSON các câu hỏi (không thêm văn bản
                 response_mime_type="application/json",
             ),
         )
-        questions = json.loads(_clean_json_text(raw_text))
+        questions = parse_ai_json_response(raw_text)
         if not isinstance(questions, list):
             questions = [questions]
         return questions
