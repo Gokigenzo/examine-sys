@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen, Upload, Home, Target } from "lucide-react";
+import { BookOpen, Upload, Home, Target, FileCheck } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,7 @@ export default function Navbar() {
 
   const navItems = [
     { name: "Trang chủ", href: "/", icon: Home },
+    { name: "Luyện đề ngay", href: "/exam", icon: FileCheck },
     { name: "Tải tài liệu", href: "/upload", icon: Upload },
     { name: "Ôn luyện", href: "/practice", icon: Target },
   ];

@@ -166,3 +166,56 @@ Trả về một MẢNG JSON, mỗi phần tử có cấu trúc:
         logger.error(f"Failed to generate quiz: {str(e)}")
         raise Exception(f"Lỗi khi tạo câu hỏi: {str(e)}")
 
+
+def extract_exam_questions(text: str) -> List[Dict[str, Any]]:
+    """
+    Extract existing exam questions, options, correct answers, and explanations
+    directly from a document that already contains an exam test.
+    """
+    prompt = f"""Bạn là một chuyên gia xử lý và số hóa đề thi.
+Văn bản dưới đây là một ĐỀ THI TRẮC NGHIỆM ĐÃ CÓ SẴN (bao gồm danh sách câu hỏi, các lựa chọn A, B, C, D, và phần bảng đáp án / lời giải thích chi tiết ở cuối hoặc kèm theo mỗi câu).
+
+Nhiệm vụ của bạn là TRÍCH XUẤT NGUYÊN VẸN toàn bộ các câu hỏi từ tài liệu thành cấu trúc dữ liệu JSON chuẩn:
+1. question_text: Nội dung câu hỏi chính xác từ bài (bỏ tiền tố 'Câu 1:', 'Câu 2:' nếu có).
+2. options: Dictionary 4 phương án {{"A": "...", "B": "...", "C": "...", "D": "..."}}.
+3. correct_option: Đáp án đúng chính xác (A, B, C hoặc D) được tra cứu từ "Bảng đáp án", "Đáp án nhanh", hoặc phần giải thích trong tài liệu.
+4. difficulty: Ước lượng độ khó ("easy", "medium", hoặc "hard") dựa trên nội dung câu hỏi.
+5. brief_explanation: Tóm tắt ngắn gọn lý do chọn đáp án này (1-2 câu).
+6. detailed_explanation: Lời giải thích chi tiết được lấy TRỰC TIẾP từ mục "Hướng dẫn giải thích chi tiết" hoặc "Giải thích" trong tài liệu (bao gồm cả trích dẫn Slide, giáo trình nếu tài liệu có ghi). Nếu tài liệu không có giải thích cho câu đó, hãy tự giải thích chi tiết dựa vào ngữ cảnh bài học.
+
+Văn bản tài liệu:
+{text}
+
+YÊU CẦU ĐẦU RA:
+Trả về một MẢNG JSON các câu hỏi (không thêm văn bản ngoài JSON):
+[
+  {{
+    "question_text": "Nội dung câu hỏi...",
+    "options": {{
+      "A": "...",
+      "B": "...",
+      "C": "...",
+      "D": "..."
+    }},
+    "correct_option": "A",
+    "difficulty": "medium",
+    "brief_explanation": "Giải thích ngắn gọn...",
+    "detailed_explanation": "Giải thích chi tiết trích xuất từ tài liệu..."
+  }}
+]"""
+
+    try:
+        raw_text = _generate_with_fallback(
+            prompt=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        questions = json.loads(_clean_json_text(raw_text))
+        if not isinstance(questions, list):
+            questions = [questions]
+        return questions
+    except Exception as e:
+        logger.error(f"Failed to extract exam questions: {str(e)}")
+        raise Exception(f"Lỗi khi trích xuất đề thi: {str(e)}")
+

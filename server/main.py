@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .config import settings
-from .routers import documents, generate, chapters, quiz
+from .routers import documents, generate, chapters, quiz, exam
 import os
 
 # Create DB tables
@@ -31,6 +31,7 @@ app.include_router(chapters.router)
 app.include_router(documents.router)
 app.include_router(generate.router)
 app.include_router(quiz.router)
+app.include_router(exam.router)
 
 @app.get("/")
 async def root():

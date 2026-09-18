@@ -98,3 +98,35 @@ class UserProgressOut(BaseModel):
 class PracticeWrongOut(BaseModel):
     question: QuestionOut
     progress: UserProgressOut
+
+class ExamAnswerItem(BaseModel):
+    question_id: int
+    selected_option: Optional[str] = None
+
+class ExamSubmitBatchRequest(BaseModel):
+    answers: List[ExamAnswerItem]
+
+class ExamAnswerResult(BaseModel):
+    question_id: int
+    selected_option: Optional[str]
+    is_correct: bool
+    correct_option: str
+    brief_explanation: str
+    detailed_explanation: str
+    wrong_count: int
+
+class ExamSubmitBatchResponse(BaseModel):
+    total_questions: int
+    answered_count: int
+    correct_count: int
+    wrong_count: int
+    skipped_count: int
+    score: float
+    results: List[ExamAnswerResult]
+
+class ExamQuickCreateResponse(BaseModel):
+    chapter_id: int
+    chapter_title: str
+    document_id: int
+    document_filename: str
+    questions: List[QuestionOut]

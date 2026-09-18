@@ -73,6 +73,34 @@ export interface PracticeWrongItem {
   progress: UserProgress;
 }
 
+export interface ExamAnswerResult {
+  question_id: number;
+  selected_option: string | null;
+  is_correct: boolean;
+  correct_option: string;
+  brief_explanation: string;
+  detailed_explanation: string;
+  wrong_count: number;
+}
+
+export interface ExamSubmitBatchResponse {
+  total_questions: number;
+  answered_count: number;
+  correct_count: number;
+  wrong_count: number;
+  skipped_count: number;
+  score: number;
+  results: ExamAnswerResult[];
+}
+
+export interface ExamQuickCreateResponse {
+  chapter_id: number;
+  chapter_title: string;
+  document_id: number;
+  document_filename: string;
+  questions: QuizQuestion[];
+}
+
 /* ───────────── API Client ───────────── */
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -175,4 +203,30 @@ export const api = {
 
   getPracticeWrong: (): Promise<PracticeWrongItem[]> =>
     fetchApi("/api/quiz/practice-wrong"),
+
+  /* ── Exam Mode ── */
+  quickCreateExam: async (file: File, examTitle?: string): Promise<ExamQuickCreateResponse> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (examTitle) {
+      formData.append("exam_title", examTitle);
+    }
+    const res = await fetch(`${API_URL}/api/exam/quick-create`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Không thể tải lên và trích xuất đề thi");
+    }
+    return res.json();
+  },
+
+  submitExamBatch: (
+    answers: { question_id: number; selected_option?: string | null }[]
+  ): Promise<ExamSubmitBatchResponse> =>
+    fetchApi("/api/exam/submit-batch", {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
 };

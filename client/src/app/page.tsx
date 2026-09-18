@@ -4,7 +4,7 @@ import { api, Chapter } from "@/lib/api";
 import ChapterList from "@/components/chapter-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Target, BookOpen, AlertTriangle, Loader2 } from "lucide-react";
+import { PlusCircle, Target, BookOpen, AlertTriangle, Loader2, FileCheck, Upload } from "lucide-react";
 
 export default function Home() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -52,6 +52,20 @@ export default function Home() {
           Nền tảng học tập ứng dụng AI giúp bạn tóm tắt lý thuyết tự động và
           tạo bài tập luyện thi thông minh từ tài liệu của bạn.
         </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Button asChild size="lg" className="bg-blue-600 hover:bg-blue-700 shadow-md text-white">
+            <a href="/exam" className="flex items-center gap-2">
+              <FileCheck className="w-5 h-5" />
+              Luyện đề ngay (Từ file có sẵn)
+            </a>
+          </Button>
+          <Button asChild variant="outline" size="lg" className="bg-white/80 border-blue-200 text-blue-900 hover:bg-white">
+            <a href="/upload" className="flex items-center gap-2">
+              <Upload className="w-5 h-5" />
+              Tải tài liệu theo chương
+            </a>
+          </Button>
+        </div>
       </section>
 
       {/* Stats cards */}
