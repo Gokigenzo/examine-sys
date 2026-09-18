@@ -1,27 +1,87 @@
 from google import genai
 from google.genai import types
 import json
+import os
+import re
 from ..config import settings
 from typing import Dict, Any, List
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini client
-client = None
-if settings.GEMINI_API_KEY:
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-else:
-    logger.warning("GEMINI_API_KEY is not set. AI services will fail.")
+# Fallback model list if the requested model is not found or deprecated
+FALLBACK_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+]
 
-MODEL_NAME = "gemini-1.5-flash"
+_client = None
+
+
+def get_client() -> genai.Client:
+    """Get or lazily initialize the Gemini client."""
+    global _client
+    if _client is not None:
+        return _client
+
+    api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise Exception("GEMINI_API_KEY chưa được cấu hình. Vui lòng thêm key trên hệ thống.")
+
+    _client = genai.Client(api_key=api_key)
+    return _client
+
+
+def _clean_json_text(text: str) -> str:
+    """Strip markdown code fence if present in model response."""
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
+def _generate_with_fallback(prompt: str, config: types.GenerateContentConfig) -> str:
+    """Attempt content generation with candidate models, falling back on 404 / not found."""
+    client = get_client()
+
+    candidates: List[str] = []
+    if settings.GEMINI_MODEL:
+        candidates.append(settings.GEMINI_MODEL)
+    for m in FALLBACK_MODELS:
+        if m not in candidates:
+            candidates.append(m)
+
+    last_err = None
+    for model_name in candidates:
+        try:
+            logger.info(f"Generating content with model: {model_name}")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
+            return response.text
+        except Exception as e:
+            err_str = str(e)
+            # Check if this error is due to model not found / unsupported version
+            if "404" in err_str or "NOT_FOUND" in err_str or "not found" in err_str.lower():
+                logger.warning(f"Model '{model_name}' not available ({err_str}). Trying next model candidate...")
+                last_err = e
+                continue
+            # For other errors (e.g. quota, auth), raise immediately
+            raise e
+
+    raise last_err or Exception("Không tìm thấy model Gemini phù hợp để tạo nội dung.")
 
 
 def generate_summary(text: str) -> Dict[str, Any]:
     """Generate summary and examples from text using Gemini."""
-    if not client:
-        raise Exception("GEMINI_API_KEY chưa được cấu hình.")
-
     prompt = f"""Bạn là một trợ lý học tập chuyên nghiệp. Hãy đọc kỹ văn bản sau và tạo ra:
 1. Tóm tắt nội dung chính (summary): Viết bằng Markdown, chia thành các phần rõ ràng với tiêu đề, sử dụng bullet points để dễ đọc. Tóm tắt phải bám sát nội dung tài liệu gốc.
 2. Ví dụ nội bộ (internal_examples): Một danh sách các ví dụ thực tế hoặc minh họa được lấy TRỰC TIẾP từ trong văn bản.
@@ -39,14 +99,13 @@ Trả về định dạng JSON chính xác như sau:
 }}"""
 
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
+        raw_text = _generate_with_fallback(
+            prompt=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
             ),
         )
-        return json.loads(response.text)
+        return json.loads(_clean_json_text(raw_text))
     except Exception as e:
         logger.error(f"Failed to generate summary: {str(e)}")
         raise Exception(f"Lỗi khi gọi API AI: {str(e)}")
@@ -56,9 +115,6 @@ def generate_quiz(
     text: str, num_easy: int, num_medium: int, num_hard: int
 ) -> List[Dict[str, Any]]:
     """Generate quiz questions from text based on difficulty counts."""
-    if not client:
-        raise Exception("GEMINI_API_KEY chưa được cấu hình.")
-
     total_questions = num_easy + num_medium + num_hard
 
     prompt = f"""Bạn là một chuyên gia ra đề thi trắc nghiệm. Dựa vào văn bản dưới đây, hãy tạo ra {total_questions} câu hỏi trắc nghiệm chất lượng cao.
@@ -96,17 +152,17 @@ Trả về một MẢNG JSON, mỗi phần tử có cấu trúc:
 }}"""
 
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
+        raw_text = _generate_with_fallback(
+            prompt=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
             ),
         )
-        questions = json.loads(response.text)
+        questions = json.loads(_clean_json_text(raw_text))
         if not isinstance(questions, list):
             questions = [questions]
         return questions
     except Exception as e:
         logger.error(f"Failed to generate quiz: {str(e)}")
         raise Exception(f"Lỗi khi tạo câu hỏi: {str(e)}")
+

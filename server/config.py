@@ -5,6 +5,7 @@ import os
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./examine_sys.db"
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     UPLOAD_DIR: str = "uploads"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
 

@@ -15,5 +15,7 @@ services:
         value: sqlite:///./examine_sys.db
       - key: UPLOAD_DIR
         value: uploads
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: PYTHON_VERSION
         value: "3.11.6"
