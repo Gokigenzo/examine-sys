@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/exam", tags=["Exam"])
 
 
 @router.post("/quick-create", response_model=ExamQuickCreateResponse)
+@router.post("/quick-create/", response_model=ExamQuickCreateResponse)
 async def quick_create_exam(
     file: UploadFile = File(...),
     exam_title: Optional[str] = Form(None),
@@ -138,6 +139,7 @@ async def quick_create_exam(
 
 
 @router.post("/submit-batch", response_model=ExamSubmitBatchResponse)
+@router.post("/submit-batch/", response_model=ExamSubmitBatchResponse)
 async def submit_exam_batch(
     req: ExamSubmitBatchRequest,
     db: Session = Depends(get_db),

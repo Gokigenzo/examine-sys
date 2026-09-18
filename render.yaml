@@ -1,6 +1,7 @@
 services:
   - type: web
     name: examine-sys-api
+    autoDeploy: true
     runtime: python
     region: singapore
     plan: free
