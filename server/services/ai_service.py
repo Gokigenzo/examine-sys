@@ -173,31 +173,70 @@ def extract_exam_questions(text: str) -> List[Dict[str, Any]]:
     1. multiple_choice: Trắc nghiệm 4 phương án lựa chọn (A, B, C, D)
     2. true_false: Trắc nghiệm Đúng / Sai (4 nhận định a, b, c, d)
     3. short_answer: Trắc nghiệm trả lời ngắn (điền số hoặc từ khóa)
+    With FULL preservation of shared context/passages for clustered questions ("câu hỏi chùm").
     """
-    prompt = f"""Bạn là một chuyên gia số hóa đề thi chuyên nghiệp theo chuẩn Bộ Giáo dục & Đào tạo Việt Nam (chương trình GDPT 2018 mới nhất).
+    prompt = f"""Bạn là một chuyên gia số hóa đề thi hàng đầu theo chuẩn Bộ Giáo dục & Đào tạo Việt Nam (chương trình GDPT 2018 mới nhất).
 Văn bản dưới đây là một ĐỀ THI (bao gồm danh sách câu hỏi, các lựa chọn, bảng nhận định Đúng/Sai, câu hỏi trả lời ngắn, và phần bảng đáp án / lời giải thích chi tiết ở cuối hoặc kèm theo mỗi câu).
 
-Nhiệm vụ của bạn là TRÍCH XUẤT NGUYÊN VẸN toàn bộ các câu hỏi từ tài liệu thành cấu trúc dữ liệu JSON chuẩn, phân loại chính xác 3 dạng câu hỏi sau:
+NHIỆM VỤ CỦA BẠN:
+Trích xuất toàn bộ các câu hỏi từ tài liệu thành cấu trúc dữ liệu JSON chuẩn, phân loại chính xác 3 dạng câu hỏi và BẮT BUỘC TUÂN THỦ CÁC QUY TẮC SAU:
 
+======================================================================
+⭐ QUY TẮC BẮT BUỘC 1: BẢO TOÀN ĐẦY ĐỦ NGỮ CẢNH CHO "CÂU HỎI CHÙM" (SHARED CONTEXT / PASSAGE)
+======================================================================
+- Trong các đề thi (đặc biệt là Phần II Đúng/Sai, Phần III Trả lời ngắn, hoặc bài đọc hiểu Phần I), rất thường xuyên xuất hiện các "CÂU HỎI CHÙM" dùng chung một đoạn văn bản dữ kiện chung phía trước, ví dụ:
+  "Sử dụng dữ kiện sau để trả lời cho câu 1 và câu 2: Trong một cuộc tập luyện chạy Marathon, người ta ước tính 'nữ hoàng chân đất' Phạm Thị Bình... tiêu tốn khoảng E = 2,52 . 10^6 calo... nhiệt hoá hơi L = 2,4 . 10^6 J/kg...
+  Câu 1. Phần năng lượng chuyển thành nhiệt...
+  Câu 2. Có khoảng bao nhiêu lít nước đã thoát ra ngoài cơ thể của cô...?"
+  hoặc "Dựa vào thông tin sau đây để trả lời câu 3, câu 4: ..."
+  hoặc "Đọc đoạn trích sau và trả lời các câu hỏi từ 1 đến 5: ..."
+
+- YÊU CẦU BẮT BUỘC:
+  1. TẤT CẢ các câu hỏi thuộc cùng chùm đó (cả Câu 1, Câu 2, Câu 3...) PHẢI ĐƯỢC GIỮ NGUYÊN VẸN ĐOẠN DỮ KIỆN CHUNG ĐÓ.
+  2. TUYỆT ĐỐI KHÔNG ĐƯỢC LƯỢC BỎ dữ kiện chung.
+  3. TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ đưa dữ kiện vào câu đầu tiên rồi bỏ qua ở các câu tiếp theo! (Nếu câu 2 bị mất dữ kiện chung, thí sinh sẽ không có số liệu E, L, D... để tính toán).
+  4. CÁCH TRÌNH BÀY TRONG `question_text` KHI CÓ DỮ KIỆN CHUNG:
+     Bắt đầu bằng Markdown blockquote `> ` chứa toàn bộ phần dữ kiện chung, sau đó xuống dòng và ghi nội dung câu hỏi cụ thể:
+
+     > **Dữ kiện chung:**
+     > [Toàn bộ nội dung dữ kiện chung, đoạn trích, bảng số liệu, các thông số của bài toán...]
+
+     **Câu hỏi:** [Nội dung yêu cầu tính toán / câu hỏi cụ thể]
+
+  5. Đồng thời, ghi đoạn dữ kiện chung đó vào trường `"context"` của câu hỏi. Nếu là câu hỏi đơn lẻ không có dữ kiện chung thì để `"context": null`.
+
+======================================================================
+⭐ QUY TẮC BẮT BUỘC 2: CHUẨN HÓA CÔNG THỨC TOÁN - VẬT LÝ - HÓA HỌC
+======================================================================
+- Sửa triệt để các lỗi trích xuất ký tự OCR từ file:
+  * Ví dụ: `10!` hoặc `106` trong công thức vật lý thực chất là lỗi hiển thị của số mũ 10^6. Phải chuẩn hóa thành `$10^6$` hoặc `10^6`.
+  * Bao bọc tất cả công thức toán, lý, hóa trong ký hiệu LaTeX `$ ... $`, ví dụ: `$x \\cdot 10^6\\text{{ J}}$`, `$E = 2,52 \\cdot 10^6\\text{{ cal}}$`, `$L = 2,4 \\cdot 10^6\\text{{ J/kg}}$`, `$D = 1,0 \\cdot 10^3\\text{{ kg/m}}^3$`, `$25^\\circ\\text{{C}}$`, `$H_2SO_4$`.
+
+======================================================================
+⭐ CÁC DẠNG CÂU HỎI:
+======================================================================
 1. Dạng 1: "multiple_choice" (Trắc nghiệm nhiều lựa chọn - 4 phương án A, B, C, D):
    - question_type: "multiple_choice"
-   - question_text: Nội dung câu hỏi chính xác (bỏ tiền tố 'Câu 1:', 'Câu 2:').
-   - options: {{"A": "nội dung A", "B": "nội dung B", "C": "nội dung C", "D": "nội dung D"}}
+   - context: Đoạn dữ kiện chung nếu có (hoặc null).
+   - question_text: Nội dung câu hỏi (chứa blockquote dữ kiện chung nếu thuộc câu chùm).
+   - options: {{"A": "...", "B": "...", "C": "...", "D": "..."}}
    - correct_option: "A", "B", "C" hoặc "D" (tra cứu từ bảng đáp án hoặc lời giải).
-   - brief_explanation: Tóm tắt ngắn gọn lý do chọn đáp án này (1-2 câu).
+   - brief_explanation: Tóm tắt ngắn gọn lý do chọn đáp án này.
    - detailed_explanation: Lời giải chi tiết từ tài liệu.
 
 2. Dạng 2: "true_false" (Trắc nghiệm Đúng / Sai gồm 4 nhận định a, b, c, d):
    - question_type: "true_false"
-   - question_text: Nội dung phần dẫn/bối cảnh của câu hỏi.
-   - options: {{"a": "Nội dung nhận định a", "b": "Nội dung nhận định b", "c": "Nội dung nhận định c", "d": "Nội dung nhận định d"}}
-   - correct_option: {{"a": true/false, "b": true/false, "c": true/false, "d": true/false}} (tra cứu từ bảng đáp án Đ-S của đề thi, true là Đúng, false là Sai).
+   - context: Đoạn dữ kiện chung/ngữ cảnh bài toán nếu có (hoặc null).
+   - question_text: Nội dung phần dẫn/bối cảnh của câu hỏi (chứa blockquote dữ kiện chung nếu thuộc câu chùm).
+   - options: {{"a": "Nhận định a", "b": "Nhận định b", "c": "Nhận định c", "d": "Nhận định d"}}
+   - correct_option: {{"a": true/false, "b": true/false, "c": true/false, "d": true/false}} (true = Đúng, false = Sai).
    - brief_explanation: Tóm tắt kết quả (ví dụ: "a-Đúng, b-Sai, c-Đúng, d-Sai").
    - detailed_explanation: Lời giải chi tiết giải thích rõ vì sao từng ý a, b, c, d là Đúng hay Sai.
 
 3. Dạng 3: "short_answer" (Trắc nghiệm trả lời ngắn):
    - question_type: "short_answer"
-   - question_text: Nội dung câu hỏi (ví dụ: "Phần năng lượng chuyển thành nhiệt là x . 10^6 J. Tìm x...").
+   - context: Đoạn dữ kiện bài toán nếu thuộc câu chùm (hoặc null).
+   - question_text: Chứa blockquote dữ kiện chung và yêu cầu tính toán cụ thể.
    - options: {{}} (object rỗng).
    - correct_option: Giá trị kết quả chính xác (dạng chuỗi, ví dụ: "6.32" hoặc "15").
    - brief_explanation: Kết quả đáp án ngắn gọn kèm đơn vị.
@@ -207,33 +246,16 @@ Văn bản tài liệu:
 {text}
 
 YÊU CẦU ĐẦU RA:
-Trả về một MẢNG JSON các câu hỏi (không thêm văn bản ngoài JSON):
+Trả về DUY NHẤT một MẢNG JSON các câu hỏi (không thêm văn bản ngoài JSON):
 [
   {{
-    "question_type": "multiple_choice",
-    "question_text": "...",
-    "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
-    "correct_option": "A",
-    "difficulty": "medium",
-    "brief_explanation": "...",
-    "detailed_explanation": "..."
-  }},
-  {{
-    "question_type": "true_false",
-    "question_text": "...",
-    "options": {{"a": "...", "b": "...", "c": "...", "d": "..."}},
-    "correct_option": {{"a": true, "b": false, "c": true, "d": false}},
-    "difficulty": "hard",
-    "brief_explanation": "...",
-    "detailed_explanation": "..."
-  }},
-  {{
     "question_type": "short_answer",
-    "question_text": "...",
+    "context": "Trong một cuộc tập luyện chạy Marathon, người ta ước tính 'nữ hoàng chân đất' Phạm Thị Bình...",
+    "question_text": "> **Dữ kiện chung:**\\n> Trong một cuộc tập luyện chạy Marathon, người ta ước tính 'nữ hoàng chân đất' Phạm Thị Bình của Việt Nam tiêu tốn khoảng $E = 2,52 \\cdot 10^6$ calo...\\n\\n**Câu hỏi:** Phần năng lượng chuyển thành nhiệt cho cuộc tập luyện này là $x \\cdot 10^6$ J. Tìm x (làm tròn kết quả đến chữ số hàng phần trăm).",
     "options": {{}},
     "correct_option": "6.32",
     "difficulty": "hard",
-    "brief_explanation": "...",
+    "brief_explanation": "x = 6.32",
     "detailed_explanation": "..."
   }}
 ]"""

@@ -142,10 +142,16 @@ async def quick_create_exam(
         else:
             correct_str = str(raw_correct).upper().strip() if raw_correct is not None else "A"
 
+        q_text = item.get("question_text", "").strip()
+        ctx = item.get("context")
+        ctx_str = str(ctx).strip() if ctx else ""
+        if ctx_str and not q_text.startswith(">") and "Dữ kiện chung" not in q_text:
+            q_text = f"> **Dữ kiện chung:**\n> {ctx_str}\n\n**Câu hỏi:** {q_text}"
+
         new_q = Question(
             chapter_id=chapter.id,
             document_id=doc.id,
-            question_text=item.get("question_text", "").strip(),
+            question_text=q_text,
             question_type=q_type,
             options=item.get("options", {}),
             correct_option=correct_str,

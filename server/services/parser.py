@@ -30,15 +30,39 @@ def parse_pdf(file_path: str) -> str:
     return clean_text(text)
 
 def parse_docx(file_path: str) -> str:
-    """Extract text from a DOCX file."""
-    text = ""
+    """Extract text from a DOCX file including tables and paragraphs."""
+    text_pieces = []
     try:
         doc = docx.Document(file_path)
-        for para in doc.paragraphs:
-            text += para.text + "\n"
+        # Attempt to read in document order via body elements
+        if hasattr(doc, "element") and hasattr(doc.element, "body"):
+            for element in doc.element.body:
+                if element.tag.endswith("p"):
+                    p = docx.text.paragraph.Paragraph(element, doc)
+                    if p.text.strip():
+                        text_pieces.append(p.text)
+                elif element.tag.endswith("tbl"):
+                    tbl = docx.table.Table(element, doc)
+                    for row in tbl.rows:
+                        row_cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                        unique_cells = []
+                        for c in row_cells:
+                            if not unique_cells or c != unique_cells[-1]:
+                                unique_cells.append(c)
+                        if unique_cells:
+                            text_pieces.append(" | ".join(unique_cells))
+        if not text_pieces:
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_pieces.append(para.text)
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    row_cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    if row_cells:
+                        text_pieces.append(" | ".join(row_cells))
     except Exception as e:
         raise Exception(f"Failed to parse DOCX: {str(e)}")
-    return clean_text(text)
+    return clean_text("\n".join(text_pieces))
 
 def parse_pptx(file_path: str) -> str:
     """Extract text from a PPTX file."""
