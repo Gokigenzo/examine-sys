@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     UPLOAD_DIR: str = "uploads"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+    JWT_SECRET_KEY: str = "examine-sys-jwt-secret-key-2026-production-secure"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     @property
     def cors_origins_list(self) -> List[str]:

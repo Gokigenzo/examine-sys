@@ -261,7 +261,12 @@ export default function ExamPage() {
         selected_option: userAnswers[q.id] || null,
       }));
 
-      const res = await api.submitExamBatch(answersPayload);
+      const res = await api.submitExamBatch(
+        answersPayload,
+        chapterId || undefined,
+        secondsElapsed,
+        mode
+      );
       setBatchResult(res);
       setPhase("review");
     } catch (err: any) {
@@ -279,13 +284,18 @@ export default function ExamPage() {
       selected_option: userAnswers[q.id] || null,
     }));
     try {
-      const res = await api.submitExamBatch(answersPayload);
+      const res = await api.submitExamBatch(
+        answersPayload,
+        chapterId || undefined,
+        secondsElapsed,
+        mode
+      );
       setBatchResult(res);
       setPhase("review");
     } catch (err) {
       console.error(err);
     }
-  }, [phase, questions, userAnswers]);
+  }, [phase, questions, userAnswers, chapterId, secondsElapsed, mode]);
 
   // ── Restart / New Exam ──
   const handleRestartExam = () => {

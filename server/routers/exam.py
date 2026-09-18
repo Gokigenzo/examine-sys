@@ -7,7 +7,17 @@ import shutil
 import logging
 
 from ..database import get_db
-from ..models import Chapter, Document, Question, UserProgress, FileType, DocStatus, Difficulty
+from ..models import (
+    Chapter,
+    Document,
+    Question,
+    UserProgress,
+    ExamAttempt,
+    User,
+    FileType,
+    DocStatus,
+    Difficulty,
+)
 from ..schemas import (
     ExamQuickCreateResponse,
     ExamSubmitBatchRequest,
@@ -17,6 +27,7 @@ from ..schemas import (
 )
 from ..services.parser import parse_file
 from ..services.ai_service import extract_exam_questions
+from ..services.auth_service import get_optional_current_user
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -30,11 +41,12 @@ async def quick_create_exam(
     file: UploadFile = File(...),
     exam_title: Optional[str] = Form(None),
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Upload an exam file (.pdf, .docx, .pptx), extract questions,
     options, answers, and explanations automatically using AI,
-    and save them into a new exam chapter.
+    and save them into a new exam chapter attached to the current user (if logged in).
     """
     # 1. Determine file type
     ext = Path(file.filename).suffix.lower()
@@ -57,7 +69,8 @@ async def quick_create_exam(
         clean_title = f"Đề thi: {base_name}"
 
     # 3. Create Chapter
-    chapter = Chapter(title=clean_title, order=0)
+    user_id = current_user.id if current_user else None
+    chapter = Chapter(title=clean_title, order=0, user_id=user_id)
     db.add(chapter)
     db.commit()
     db.refresh(chapter)
@@ -143,10 +156,12 @@ async def quick_create_exam(
 async def submit_exam_batch(
     req: ExamSubmitBatchRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Submit multiple questions at once (Exam Mode), evaluate answers,
-    update user progress (mark wrong answers), and return full score breakdown.
+    update user-specific progress (mark wrong answers), record exam attempt,
+    and return full score breakdown.
     """
     total = len(req.answers)
     answered = 0
@@ -154,11 +169,16 @@ async def submit_exam_batch(
     wrong = 0
     skipped = 0
     results: List[ExamAnswerResult] = []
+    user_id = current_user.id if current_user else None
+    attempt_chapter_id = req.chapter_id
 
     for item in req.answers:
         q = db.query(Question).filter(Question.id == item.question_id).first()
         if not q:
             continue
+
+        if not attempt_chapter_id:
+            attempt_chapter_id = q.chapter_id
 
         sel = item.selected_option.strip().upper() if item.selected_option else None
         is_answered = sel is not None and sel != ""
@@ -172,13 +192,18 @@ async def submit_exam_batch(
                 wrong += 1
 
             # Update UserProgress
-            prog = (
-                db.query(UserProgress)
-                .filter(UserProgress.question_id == q.id)
-                .first()
+            prog_query = db.query(UserProgress).filter(
+                UserProgress.question_id == q.id
             )
+            if user_id is not None:
+                prog_query = prog_query.filter(UserProgress.user_id == user_id)
+            else:
+                prog_query = prog_query.filter(UserProgress.user_id.is_(None))
+
+            prog = prog_query.first()
             if not prog:
                 prog = UserProgress(
+                    user_id=user_id,
                     question_id=q.id,
                     is_wrong=not is_corr,
                     wrong_count=1 if not is_corr else 0,
@@ -197,13 +222,18 @@ async def submit_exam_batch(
             skipped += 1
             is_corr = False
             # If skipped, record as wrong so it can be reviewed
-            prog = (
-                db.query(UserProgress)
-                .filter(UserProgress.question_id == q.id)
-                .first()
+            prog_query = db.query(UserProgress).filter(
+                UserProgress.question_id == q.id
             )
+            if user_id is not None:
+                prog_query = prog_query.filter(UserProgress.user_id == user_id)
+            else:
+                prog_query = prog_query.filter(UserProgress.user_id.is_(None))
+
+            prog = prog_query.first()
             if not prog:
                 prog = UserProgress(
+                    user_id=user_id,
                     question_id=q.id,
                     is_wrong=True,
                     wrong_count=1,
@@ -229,6 +259,22 @@ async def submit_exam_batch(
         )
 
     score = round((correct / total * 10), 1) if total > 0 else 0.0
+
+    # Record ExamAttempt in user's history
+    if attempt_chapter_id:
+        attempt = ExamAttempt(
+            user_id=user_id,
+            chapter_id=attempt_chapter_id,
+            score=score,
+            total_questions=total,
+            correct_count=correct,
+            wrong_count=wrong,
+            skipped_count=skipped,
+            time_spent_seconds=req.time_spent_seconds or 0,
+            mode=req.mode or "exam",
+        )
+        db.add(attempt)
+        db.commit()
 
     return ExamSubmitBatchResponse(
         total_questions=total,

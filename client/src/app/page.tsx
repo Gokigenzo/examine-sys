@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, Chapter } from "@/lib/api";
+import { useAuth } from "@/context/auth-context";
 import ChapterList from "@/components/chapter-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Target, BookOpen, AlertTriangle, Loader2, FileCheck, Upload } from "lucide-react";
+import { PlusCircle, Target, BookOpen, AlertTriangle, Loader2, FileCheck, Upload, User as UserIcon } from "lucide-react";
+import Link from "next/link";
 
 export default function Home() {
+  const { user } = useAuth();
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -45,6 +48,12 @@ export default function Home() {
     <div className="space-y-8">
       {/* Hero section */}
       <section className="bg-gradient-to-br from-blue-50 to-indigo-50 -mx-4 px-4 py-12 mb-8 rounded-b-3xl shadow-sm text-center">
+        {user && (
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold mb-4">
+            <UserIcon className="w-3.5 h-3.5" />
+            Xin chào, {user.full_name}! Chúc bạn học tập hiệu quả hôm nay.
+          </div>
+        )}
         <h1 className="text-4xl font-bold text-blue-900 mb-4">
           Chào mừng đến với Luyện Thi Thông Minh
         </h1>

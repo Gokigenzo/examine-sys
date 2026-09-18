@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database import engine, Base
+from .database import engine, Base, migrate_db
 from .config import settings
-from .routers import documents, generate, chapters, quiz, exam
+from .routers import documents, generate, chapters, quiz, exam, auth
 import os
 
-# Create DB tables
+# Create DB tables & apply migrations
 Base.metadata.create_all(bind=engine)
+migrate_db()
 
 # Ensure uploads directory
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -27,6 +28,7 @@ app.add_middleware(
 )
 
 # Include Routers
+app.include_router(auth.router)
 app.include_router(chapters.router)
 app.include_router(documents.router)
 app.include_router(generate.router)
