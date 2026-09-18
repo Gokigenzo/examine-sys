@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: examine-sys-api
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r server/requirements.txt
+    startCommand: uvicorn server.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false  # User will enter manually
+      - key: CORS_ORIGINS
+        value: https://client-azure-psi-20.vercel.app,http://localhost:3000
+      - key: DATABASE_URL
+        value: sqlite:///./examine_sys.db
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: PYTHON_VERSION
+        value: "3.11.6"
