@@ -38,3 +38,30 @@ app.include_router(exam.router)
 @app.get("/")
 async def root():
     return {"message": "Welcome to AI-Powered Learning & Test Prep API"}
+
+
+@app.get("/api/llm/status")
+async def llm_status():
+    """Check current LLM provider status."""
+    from .services.ai_service import get_ollama_status
+
+    provider = settings.LLM_PROVIDER.lower()
+    result = {
+        "provider": provider,
+        "gemini_model": settings.GEMINI_MODEL,
+        "gemini_configured": bool(settings.GEMINI_API_KEY),
+        "ollama": get_ollama_status(),
+    }
+    return result
+
+
+@app.post("/api/llm/switch")
+async def switch_llm(provider: str):
+    """Switch LLM provider at runtime (gemini or ollama)."""
+    provider = provider.lower().strip()
+    if provider not in ("gemini", "ollama"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Provider phải là 'gemini' hoặc 'ollama'")
+    settings.LLM_PROVIDER = provider
+    return {"message": f"Đã chuyển sang {provider}", "provider": provider}
+

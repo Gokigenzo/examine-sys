@@ -4,8 +4,15 @@ import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./examine_sys.db"
+    # LLM Provider: "gemini" or "ollama"
+    LLM_PROVIDER: str = "ollama"
+    # Gemini settings
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Ollama settings
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:3b"
+    # General
     UPLOAD_DIR: str = "uploads"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     JWT_SECRET_KEY: str = "examine-sys-jwt-secret-key-2026-production-secure"

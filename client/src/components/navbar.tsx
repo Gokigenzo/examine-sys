@@ -17,6 +17,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
 import AuthModal from "./auth-modal";
+import LlmStatusBadge from "./llm-status-badge";
 import { Button } from "./ui/button";
 
 export default function Navbar() {
@@ -64,6 +65,9 @@ export default function Navbar() {
               </Link>
             ))}
           </div>
+
+          {/* LLM Status */}
+          <LlmStatusBadge />
 
           {/* User Auth Section */}
           <div className="flex items-center gap-2 flex-shrink-0">

@@ -166,6 +166,22 @@ export interface UserDashboardStats {
   recent_attempts: ExamAttempt[];
 }
 
+export interface OllamaStatus {
+  status: "online" | "offline";
+  base_url: string;
+  models: string[];
+  active_model: string;
+  model_available: boolean;
+  error?: string;
+}
+
+export interface LlmStatus {
+  provider: "gemini" | "ollama";
+  gemini_model: string;
+  gemini_configured: boolean;
+  ollama: OllamaStatus;
+}
+
 /* ───────────── API Client ───────────── */
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -374,5 +390,15 @@ export const api = {
         time_spent_seconds: timeSpentSeconds,
         mode,
       }),
+    }),
+
+  /* ── LLM Management ── */
+  getLlmStatus: (): Promise<LlmStatus> => fetchApi("/api/llm/status"),
+
+  switchLlmProvider: (
+    provider: "gemini" | "ollama"
+  ): Promise<{ message: string; provider: string }> =>
+    fetchApi(`/api/llm/switch?provider=${provider}`, {
+      method: "POST",
     }),
 };

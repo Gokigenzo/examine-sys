@@ -8,15 +8,33 @@ services:
     buildCommand: pip install -r server/requirements.txt
     startCommand: uvicorn server.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: LLM_PROVIDER
+        value: gemini
       - key: GEMINI_API_KEY
-        sync: false  # User will enter manually
-      - key: CORS_ORIGINS
-        value: https://client-azure-psi-20.vercel.app,http://localhost:3000
-      - key: DATABASE_URL
-        value: sqlite:///./examine_sys.db
-      - key: UPLOAD_DIR
-        value: uploads
+        sync: false  # Nhập API Key trên Render Dashboard
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: CORS_ORIGINS
+        value: https://examine-sys.vercel.app,https://client-azure-psi-20.vercel.app,http://localhost:3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: examine-sys-db
+          property: connectionString
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: GOOGLE_CLIENT_ID
+        value: 1084568851949-ku2bbjupgvimhpjljn85iuteo80d216l.apps.googleusercontent.com
       - key: PYTHON_VERSION
         value: "3.11.6"
+
+databases:
+  - name: examine-sys-db
+    plan: free
+    region: singapore
+
