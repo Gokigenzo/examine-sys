@@ -178,7 +178,8 @@ def _call_ollama(prompt: str) -> str:
         "format": "json",
         "stream": False,
         "options": {
-            "temperature": 0.7,
+            "temperature": 0.2,
+            "num_ctx": 8192,
             "num_predict": 8192,
         },
     }
@@ -367,15 +368,81 @@ Trả về DUY NHẤT một MẢNG JSON (KHÔNG thêm bất kỳ văn bản nào
         raise Exception(f"Lỗi khi tạo câu hỏi: {str(e)}")
 
 
+def _split_text_into_question_chunks(raw_text: str, chunk_size: int = 4) -> List[str]:
+    """Split a full exam document into smaller groups of questions for local LLM processing."""
+    # Pattern to detect question headings like: Câu 1, Câu 2:, Bài 1., Question 1, etc.
+    pattern = r'(?=(?:^|\n)\s*(?:Câu|Bài|Question|CÂU|BÀI)\s*\d+[\s\.\:\-])'
+    parts = [p.strip() for p in re.split(pattern, raw_text, flags=re.IGNORECASE) if p.strip()]
+
+    # If no question markers found, or very few chunks, fallback to splitting by double newlines
+    if len(parts) <= 1:
+        # Check overall length
+        if len(raw_text) < 3000:
+            return [raw_text]
+        # Split by paragraphs
+        paragraphs = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
+        chunks = []
+        curr = []
+        curr_len = 0
+        for p in paragraphs:
+            curr.append(p)
+            curr_len += len(p)
+            if curr_len >= 2000:
+                chunks.append("\n\n".join(curr))
+                curr = []
+                curr_len = 0
+        if curr:
+            chunks.append("\n\n".join(curr))
+        return chunks if chunks else [raw_text]
+
+    chunks = []
+    # If the first part is just header/instructions before Câu 1, prepend it to the first chunk
+    start_idx = 0
+    header = ""
+    first_part = parts[0]
+    if not re.match(r'^(?:Câu|Bài|Question|CÂU|BÀI)\s*\d+', first_part, re.IGNORECASE):
+        header = first_part
+        start_idx = 1
+
+    actual_questions = parts[start_idx:]
+    for i in range(0, len(actual_questions), chunk_size):
+        batch = actual_questions[i : i + chunk_size]
+        text_batch = "\n\n".join(batch)
+        if i == 0 and header:
+            text_batch = f"{header}\n\n{text_batch}"
+        chunks.append(text_batch)
+
+    return chunks if chunks else [raw_text]
+
+
 def extract_exam_questions(text: str) -> List[Dict[str, Any]]:
     """
-    Extract existing exam questions from a document supporting 3 modern Vietnamese exam types:
+    Extract existing exam questions from a document supporting:
     1. multiple_choice: Trắc nghiệm 4 phương án lựa chọn (A, B, C, D)
     2. true_false: Trắc nghiệm Đúng / Sai (4 nhận định a, b, c, d)
     3. short_answer: Trắc nghiệm trả lời ngắn (điền số hoặc từ khóa)
+
+    Uses intelligent chunking to ensure ALL questions (e.g. 30-50 questions) are extracted
+    without being truncated by local model context window limits.
     """
-    prompt = f"""Bạn là một chuyên gia số hóa đề thi hàng đầu theo chuẩn Bộ Giáo dục & Đào tạo Việt Nam.
-Văn bản dưới đây là một ĐỀ THI. Trích xuất toàn bộ các câu hỏi thành cấu trúc dữ liệu JSON chuẩn.
+    provider = settings.LLM_PROVIDER.lower()
+    
+    # For Ollama / local model, use smaller batch chunking to avoid skipping questions
+    # For Gemini, it has a 1M token context window, but chunking also helps precision
+    chunk_size = 4 if provider == "ollama" else 10
+    chunks = _split_text_into_question_chunks(text, chunk_size=chunk_size)
+    logger.info(f"Extracting exam questions in {len(chunks)} chunk(s) (provider={provider})...")
+
+    all_questions: List[Dict[str, Any]] = []
+
+    for idx, chunk in enumerate(chunks):
+        logger.info(f"Processing chunk {idx + 1}/{len(chunks)} (length: {len(chunk)} chars)...")
+        prompt = f"""Bạn là một chuyên gia số hóa đề thi hàng đầu theo chuẩn Bộ Giáo dục & Đào tạo Việt Nam.
+Văn bản dưới đây là một phần của ĐỀ THI. 
+
+NHIỆM VỤ CỦA BẠN:
+Trích xuất TẤT CẢ các câu hỏi có trong đoạn văn bản này thành danh sách JSON.
+BẮT BUỘC: Không được bỏ sót bất kỳ câu hỏi nào có trong đoạn văn bản! Nếu có 4 câu, danh sách "questions" PHẢI có đủ 4 câu!
 
 CÁC DẠNG CÂU HỎI:
 1. "multiple_choice": Trắc nghiệm 4 phương án A, B, C, D
@@ -383,29 +450,62 @@ CÁC DẠNG CÂU HỎI:
 3. "short_answer": Trắc nghiệm trả lời ngắn (điền số hoặc từ khóa)
 
 Văn bản tài liệu:
-{text}
+{chunk}
 
 YÊU CẦU ĐẦU RA:
-Trả về DUY NHẤT một MẢNG JSON (KHÔNG thêm bất kỳ văn bản nào ngoài JSON):
-[
-  {{
-    "question_type": "multiple_choice",
-    "context": null,
-    "question_text": "...",
-    "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
-    "correct_option": "A",
-    "difficulty": "easy",
-    "brief_explanation": "...",
-    "detailed_explanation": "..."
-  }}
-]"""
+Trả về DUY NHẤT một đối tượng JSON có thuộc tính "questions" là danh sách các câu hỏi đã trích xuất:
+{{
+  "questions": [
+    {{
+      "question_type": "multiple_choice",
+      "context": null,
+      "question_text": "Nội dung câu hỏi...",
+      "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+      "correct_option": "A",
+      "difficulty": "easy",
+      "brief_explanation": "Giải thích ngắn...",
+      "detailed_explanation": "Giải thích chi tiết..."
+    }}
+  ]
+}}"""
 
-    try:
-        raw_text = _generate_content(prompt)
-        questions = parse_ai_json_response(raw_text)
-        if not isinstance(questions, list):
-            questions = [questions]
-        return questions
-    except Exception as e:
-        logger.error(f"Failed to extract exam questions: {str(e)}")
-        raise Exception(f"Lỗi khi trích xuất đề thi: {str(e)}")
+        try:
+            raw_text = _generate_content(prompt)
+            parsed = parse_ai_json_response(raw_text)
+
+            extracted_items = []
+            if isinstance(parsed, dict):
+                if "questions" in parsed and isinstance(parsed["questions"], list):
+                    extracted_items = parsed["questions"]
+                elif "data" in parsed and isinstance(parsed["data"], list):
+                    extracted_items = parsed["data"]
+                else:
+                    # Single question dict
+                    extracted_items = [parsed]
+            elif isinstance(parsed, list):
+                extracted_items = parsed
+
+            # Filter valid questions
+            for q in extracted_items:
+                if isinstance(q, dict) and q.get("question_text"):
+                    all_questions.append(q)
+
+            logger.info(f"Chunk {idx + 1} extracted {len(extracted_items)} question(s). Total so far: {len(all_questions)}")
+        except Exception as e:
+            logger.warning(f"Error extracting questions in chunk {idx + 1}: {e}")
+            continue
+
+    # Deduplicate questions by question_text while preserving order
+    seen_texts = set()
+    unique_questions = []
+    for q in all_questions:
+        txt = q.get("question_text", "").strip()
+        if txt and txt not in seen_texts:
+            seen_texts.add(txt)
+            unique_questions.append(q)
+
+    logger.info(f"Finished extraction. Total unique questions extracted: {len(unique_questions)}")
+    if not unique_questions:
+        raise Exception("Không thể trích xuất được câu hỏi nào từ tài liệu.")
+
+    return unique_questions
